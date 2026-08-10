@@ -4,7 +4,15 @@ import { signatureFor } from '../stack.mjs';
 export const id = 'environment';
 
 const BOOTSTRAP_SCRIPTS = ['init.sh', 'bootstrap.sh', 'scripts/setup.sh'];
-const CONTAINER_FILES = ['Dockerfile', '.devcontainer/devcontainer.json', 'docker-compose.yml'];
+// Derived from docker's own manifest list rather than hand-maintained as a
+// parallel copy: any repository stack.mjs recognises as 'docker' (via any
+// of its manifest filenames) must also count as containerized here, or the
+// tool tells a user who has containerized their project that they haven't.
+// A hand-synced duplicate of this list previously drifted (it only listed
+// 'docker-compose.yml', not the other three Compose spellings), producing
+// exactly that broken-feedback-loop bug for 'compose.yml'-only repos —
+// deriving it closes off that entire class of drift permanently.
+const CONTAINER_FILES = [...(signatureFor('docker')?.manifest ?? []), '.devcontainer/devcontainer.json'];
 
 /** The verifyReport's bootstrap-role command entry, or null if none exists. */
 function bootstrapCommandFrom(verifyReport) {

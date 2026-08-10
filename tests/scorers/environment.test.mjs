@@ -163,9 +163,11 @@ test('a docker-only repo with a Dockerfile present is not penalised for lacking 
   const files = { 'Dockerfile': 'FROM alpine\n', 'init.sh': '#!/bin/sh\n' };
   const r = score(input({ files, stack: ['docker'] }));
   // Dockerfile is simultaneously docker's manifest, its container file, and
-  // its runtime pin (STACK_SIGNATURES: docker.runtimePins = ['Dockerfile']),
-  // and docker's lockfiles: [] is vacuously satisfied, so this repo can climb
-  // to rung 3 on file evidence alone (bootstrap verification still ungiven).
+  // one of its runtime pins (STACK_SIGNATURES: docker.runtimePins mirrors
+  // docker.manifest, so it includes 'Dockerfile' among the compose
+  // filenames), and docker's lockfiles: [] is vacuously satisfied, so this
+  // repo can climb to rung 3 on file evidence alone (bootstrap verification
+  // still ungiven).
   assert.equal(r.gapIds.includes('environment.no-lockfile'), false);
   assert.equal(r.score, 3);
   assert.equal(r.cappedByEvidence, true);
@@ -218,6 +220,32 @@ test('real ScanContext: a compose.yml-only repo (the filename most likely to be 
   assert.deepEqual(stack, ['docker']);
   assert.ok(r.score > 0, 'must not silently score 0 with nothing to point the user at');
   if (r.score < 4) assert.ok(r.gapIds.length > 0, 'below max score, the user must always get something actionable');
+});
+
+// --- Review fix regression #2: CONTAINER_FILES (the rung-4 containerization
+// check) had the same hand-synced-parallel-list hazard as runtimePins did —
+// it only recognized 'docker-compose.yml', so a 'compose.yml'-only repo (the
+// name Docker Compose itself now prefers) got told it wasn't containerized.
+// Looped over every spelling on purpose: this is what makes a future
+// addition to stack.mjs's docker manifest without a matching update here
+// (or vice versa) fail loudly instead of silently reintroducing the bug.
+
+test('every Compose filename spelling is recognized as containerized, not just docker-compose.yml (parity, looped)', () => {
+  const composeSpellings = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
+  for (const filename of composeSpellings) {
+    const root = mkdtempSync(join(tmpdir(), 'harness-env-compose-parity-'));
+    writeFileSync(join(root, filename), 'services:\n  app:\n    image: alpine\n');
+    // A bootstrap script is included purely to isolate what's under test:
+    // without it, rung 3 would also fail and add its own unrelated gap.
+    writeFileSync(join(root, 'init.sh'), '#!/bin/sh\n');
+    const { stack, r } = scoreRealRepo(root);
+    assert.deepEqual(stack, ['docker'], filename);
+    assert.equal(
+      r.gapIds.includes('environment.no-container'),
+      false,
+      `${filename}-only repo must not be told it isn't containerized`,
+    );
+  }
 });
 
 // --- self-review: polyglot repo where one stack has a lockfile and another does not ---
