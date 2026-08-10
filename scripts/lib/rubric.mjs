@@ -18,6 +18,7 @@ export const GAPS = [
   def('instructions.no-stack-versions', 'high', 2),
   def('instructions.no-setup-commands', 'high', 2),
   def('instructions.no-constraints', 'medium', 2),
+  def('instructions.no-verification', 'high', 2),
   def('instructions.too-long', 'medium', 2),
   def('instructions.no-layering', 'low', 2),
   def('instructions.stale-links', 'medium', 2),

@@ -67,7 +67,7 @@ export function score({ ctx, stack }) {
     ] },
     { score: 3, checks: [
       { ok: hasConstraints, gapId: 'instructions.no-constraints' },
-      { ok: hasVerify, gapId: 'instructions.no-constraints' },
+      { ok: hasVerify, gapId: 'instructions.no-verification' },
       { ok: withinLength, gapId: 'instructions.too-long' },
     ] },
     { score: 4, checks: [

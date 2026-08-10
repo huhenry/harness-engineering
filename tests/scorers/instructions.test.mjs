@@ -99,6 +99,52 @@ test('emitted gap ids all belong to this subsystem', () => {
   for (const id of r.gapIds) assert.ok(id.startsWith('instructions.'), id);
 });
 
+test('a doc with Constraints but no Verification section emits no-verification, not no-constraints', () => {
+  const doc = [
+    '# Demo',
+    '',
+    'Go 1.23.',
+    '',
+    '## Setup',
+    '',
+    '```bash',
+    './init.sh',
+    '```',
+    '',
+    '## Constraints',
+    '',
+    'Never deploy from a local branch.',
+    '',
+  ].join('\n');
+  const r = score(input({ 'AGENTS.md': doc }));
+  assert.ok(r.gapIds.includes('instructions.no-verification'));
+  assert.equal(r.gapIds.includes('instructions.no-constraints'), false);
+});
+
+test('a doc with Verification but no Constraints section emits no-constraints, not no-verification', () => {
+  const doc = [
+    '# Demo',
+    '',
+    'Go 1.23.',
+    '',
+    '## Setup',
+    '',
+    '```bash',
+    './init.sh',
+    '```',
+    '',
+    '## Verification',
+    '',
+    '```bash',
+    'go test ./...',
+    '```',
+    '',
+  ].join('\n');
+  const r = score(input({ 'AGENTS.md': doc }));
+  assert.ok(r.gapIds.includes('instructions.no-constraints'));
+  assert.equal(r.gapIds.includes('instructions.no-verification'), false);
+});
+
 // --- additional self-review coverage beyond the brief's given suite ---
 
 test('every gap id this scorer can ever emit exists in the rubric GAPS table', () => {
