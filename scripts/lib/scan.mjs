@@ -1,8 +1,13 @@
 import { readFileSync, statSync, readdirSync, existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const DEFAULT_IGNORE = ['node_modules/**', '.git/**', 'dist/**', 'build/**', 'vendor/**'];
+// Depth-agnostic: real repos have per-package node_modules/vendor trees, not
+// just root-level ones, so every default is prefixed with '**/'.
+const DEFAULT_IGNORE = ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**', '**/vendor/**'];
+// Basename fast-path so walk() can prune these directories without descending
+// into them at all, instead of relying solely on post-hoc regex filtering.
+const PRUNE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'vendor']);
 
 /** Translate a minimal glob (supports * and **) into an anchored RegExp. */
 function globToRegExp(pattern) {
@@ -27,6 +32,7 @@ function walk(root, dir, acc) {
   let entries;
   try { entries = readdirSync(join(root, dir), { withFileTypes: true }); } catch { return acc; }
   for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    if (entry.isDirectory() && PRUNE_DIRS.has(entry.name)) continue;
     const rel = dir ? `${dir}/${entry.name}` : entry.name;
     if (entry.isDirectory()) walk(root, rel, acc);
     else if (entry.isFile()) acc.push(rel);
