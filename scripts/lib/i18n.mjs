@@ -17,6 +17,14 @@ export const MESSAGES = {
     'report.noGaps': 'No gaps found.',
     'report.gapsHeading': 'Gaps by ROI',
 
+    // --- maturity levels ---
+    'level.0': 'Ad-hoc',
+    'level.1': 'Instructed',
+    'level.2': 'Reproducible',
+    'level.3': 'Continuous',
+    'level.4': 'Evidence-backed',
+    'level.5': 'Loop-ready',
+
     // --- gap catalogue: instructions ---
     'gap.instructions.missing.title': 'No AGENTS.md or CLAUDE.md',
     'gap.instructions.missing.why': 'Agents start every session with zero project context and re-derive the stack, entry points and constraints from scratch.',
@@ -150,6 +158,14 @@ export const MESSAGES = {
     'report.needsEvidence': '已封顶 —— 跑 `verify --run` 补证据',
     'report.noGaps': '未发现差距。',
     'report.gapsHeading': '差距清单（按 ROI 排序）',
+
+    // --- 成熟度等级 ---
+    'level.0': '无序',
+    'level.1': '有指令',
+    'level.2': '可复现',
+    'level.3': '可续跑',
+    'level.4': '有证据',
+    'level.5': '可自主循环',
 
     // --- gap 目录：instructions ---
     'gap.instructions.missing.title': '缺少 AGENTS.md 或 CLAUDE.md',
