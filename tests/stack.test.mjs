@@ -101,3 +101,30 @@ test('signatureFor returns the matching signature', () => {
 test('signatureFor returns null for an unknown id rather than throwing', () => {
   assert.equal(signatureFor('nope'), null);
 });
+
+// --- Review fix: CMakeLists.txt alone must not be mistaken for 'embedded' ---
+
+test('real ScanContext: a plain CMake C++ project (no platformio.ini/sdkconfig) is not classified embedded', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-cmake-'));
+  writeFileSync(join(root, 'CMakeLists.txt'), 'cmake_minimum_required(VERSION 3.20)\nproject(x)\n');
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'src', 'main.cpp'), 'int main() { return 0; }\n');
+  const ctx = createScanContext(root);
+  assert.deepEqual(detectStack(ctx), []);
+});
+
+test('real ScanContext: a platformio.ini project is still detected as embedded', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-platformio-'));
+  writeFileSync(join(root, 'platformio.ini'), '[env:esp32dev]\nplatform = espressif32\n');
+  const ctx = createScanContext(root);
+  assert.deepEqual(detectStack(ctx), ['embedded']);
+});
+
+// --- Review fix: docker manifest must cover all Compose file name variants ---
+
+test('real ScanContext: a repo with only compose.yml (no Dockerfile) is detected as docker', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-compose-'));
+  writeFileSync(join(root, 'compose.yml'), 'services:\n  app:\n    image: alpine\n');
+  const ctx = createScanContext(root);
+  assert.deepEqual(detectStack(ctx), ['docker']);
+});
