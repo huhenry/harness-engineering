@@ -15,7 +15,13 @@ export const STACK_SIGNATURES = [
   { id: 'rust', manifest: ['Cargo.toml'], lockfiles: ['Cargo.lock'], runtimePins: ['rust-toolchain.toml', 'rust-toolchain'] },
   { id: 'flutter', manifest: ['pubspec.yaml'], lockfiles: ['pubspec.lock'], runtimePins: ['.fvmrc', '.tool-versions'] },
   { id: 'java', manifest: ['pom.xml', 'build.gradle', 'build.gradle.kts'], lockfiles: ['gradle.lockfile'], runtimePins: ['.java-version', '.sdkmanrc'] },
-  { id: 'docker', manifest: ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'], lockfiles: [], runtimePins: ['Dockerfile'] },
+  // runtimePins mirrors manifest: a compose-only repo (no bare Dockerfile)
+  // is still detected as 'docker' via manifest, and its compose file *is*
+  // its runtime-pinning artifact (image tags, build context, ...) — leaving
+  // runtimePins as ['Dockerfile'] alone made every compose-only repo look
+  // like it had zero environment-pinning signal at all downstream, in the
+  // Environment scorer's rung-1 check.
+  { id: 'docker', manifest: ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'], lockfiles: [], runtimePins: ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'] },
   // CMakeLists.txt deliberately excluded: CMake is used far more by plain
   // desktop/library C/C++ projects than by embedded ones, so its presence
   // carries almost no signal for this stack and would false-positive every

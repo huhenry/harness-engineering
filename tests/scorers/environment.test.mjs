@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { score } from '../../scripts/lib/scorers/environment.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
-import { globToRegExp } from '../../scripts/lib/scan.mjs';
+import { createScanContext, globToRegExp } from '../../scripts/lib/scan.mjs';
+import { detectStack } from '../../scripts/lib/stack.mjs';
 
 function input({ files = {}, stack = ['node'], verifyReport = null, now = new Date('2026-08-10T00:00:00Z') } = {}) {
   return {
@@ -167,13 +171,53 @@ test('a docker-only repo with a Dockerfile present is not penalised for lacking 
   assert.equal(r.cappedByEvidence, true);
 });
 
-test('a docker-only repo with only docker-compose.yml (no Dockerfile) scores 0, per the signature table runtimePins requiring Dockerfile specifically', () => {
-  // Documented, deliberate behavior inherited from stack.mjs's signature
-  // (docker.runtimePins = ['Dockerfile'] only) rather than a bug introduced
-  // here: this scorer must not second-guess Task 6's signature table.
+test('a docker-only repo with only docker-compose.yml (no Dockerfile) is no longer a silent zero', () => {
+  // Review fix: docker.runtimePins in stack.mjs now mirrors docker.manifest
+  // (Task 6 already covered all compose filenames in manifest, but left
+  // runtimePins as ['Dockerfile'] alone). A compose file is itself the
+  // artifact that pins this stack's runtime, so a compose-only repo now
+  // reaches rung 2 instead of a diagnosis-free score of 0.
   const files = { 'docker-compose.yml': 'services: {}\n' };
   const r = score(input({ files, stack: ['docker'] }));
-  assert.equal(r.score, 0);
+  assert.equal(r.score, 2);
+  assert.ok(r.gapIds.includes('environment.no-bootstrap'));
+});
+
+// --- Review fix regression: docker.runtimePins now mirrors docker.manifest ---
+// (verified against a *real* createScanContext + detectStack, not the fake
+// test double, so this exercises the actual stack.mjs signature table.)
+
+function makeComposeOnlyRepo(filename) {
+  const root = mkdtempSync(join(tmpdir(), 'harness-env-compose-'));
+  writeFileSync(join(root, filename), 'services:\n  app:\n    image: alpine\n');
+  return root;
+}
+
+function scoreRealRepo(root) {
+  const ctx = createScanContext(root);
+  const stack = detectStack(ctx);
+  const r = score({
+    ctx,
+    stack,
+    config: { lang: 'en', verify: {}, ignore: [], source: 'none' },
+    verifyReport: null,
+    now: new Date('2026-08-10T00:00:00Z'),
+  });
+  return { stack, r };
+}
+
+test('real ScanContext: a docker-compose.yml-only repo scores above 0 and, since it is below 4, always carries an actionable gap', () => {
+  const { stack, r } = scoreRealRepo(makeComposeOnlyRepo('docker-compose.yml'));
+  assert.deepEqual(stack, ['docker']);
+  assert.ok(r.score > 0, 'must not silently score 0 with nothing to point the user at');
+  if (r.score < 4) assert.ok(r.gapIds.length > 0, 'below max score, the user must always get something actionable');
+});
+
+test('real ScanContext: a compose.yml-only repo (the filename most likely to be missed) also scores above 0 with an actionable gap', () => {
+  const { stack, r } = scoreRealRepo(makeComposeOnlyRepo('compose.yml'));
+  assert.deepEqual(stack, ['docker']);
+  assert.ok(r.score > 0, 'must not silently score 0 with nothing to point the user at');
+  if (r.score < 4) assert.ok(r.gapIds.length > 0, 'below max score, the user must always get something actionable');
 });
 
 // --- self-review: polyglot repo where one stack has a lockfile and another does not ---

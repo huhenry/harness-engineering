@@ -128,3 +128,16 @@ test('real ScanContext: a repo with only compose.yml (no Dockerfile) is detected
   const ctx = createScanContext(root);
   assert.deepEqual(detectStack(ctx), ['docker']);
 });
+
+// --- Fix: docker.runtimePins must mirror docker.manifest, or a compose-only
+// repo (detected as 'docker' via manifest) shows zero runtime-pin signal to
+// every downstream consumer (the Environment scorer's rung-1 check) even
+// though its compose file is exactly the artifact that pins its runtime.
+
+test("docker signature's runtimePins mirrors its manifest — every compose filename plus Dockerfile", () => {
+  const sig = signatureFor('docker');
+  for (const f of ['Dockerfile', 'docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml']) {
+    assert.ok(sig.runtimePins.includes(f), `docker.runtimePins missing ${f}`);
+  }
+  assert.deepEqual([...sig.runtimePins].sort(), [...sig.manifest].sort());
+});
