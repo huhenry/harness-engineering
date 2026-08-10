@@ -1,0 +1,103 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { detectStack, STACK_SIGNATURES, signatureFor } from '../scripts/lib/stack.mjs';
+import { createScanContext } from '../scripts/lib/scan.mjs';
+
+function fakeCtx(files) {
+  const set = new Set(files);
+  return {
+    root: '/fake',
+    exists: (rel) => set.has(rel),
+    read: () => null,
+    readJson: () => null,
+    list: (patterns) => [...set].filter((f) => patterns.some((p) => f.endsWith(p.replace('**/', '')))).sort(),
+    mtime: () => null,
+    gitLastCommit: () => null,
+  };
+}
+
+test('detects a single stack', () => {
+  assert.deepEqual(detectStack(fakeCtx(['go.mod'])), ['go']);
+});
+
+test('detects multiple stacks sorted and deduped', () => {
+  const ctx = fakeCtx(['go.mod', 'package.json', 'Dockerfile']);
+  assert.deepEqual(detectStack(ctx), ['docker', 'go', 'node']);
+});
+
+test('returns empty array when nothing recognizable', () => {
+  assert.deepEqual(detectStack(fakeCtx(['README.md'])), []);
+});
+
+test('every signature declares manifest, lockfiles and runtimePins', () => {
+  for (const sig of STACK_SIGNATURES) {
+    assert.ok(sig.id, 'id required');
+    assert.ok(Array.isArray(sig.manifest) && sig.manifest.length > 0, `${sig.id} manifest`);
+    assert.ok(Array.isArray(sig.lockfiles), `${sig.id} lockfiles`);
+    assert.ok(Array.isArray(sig.runtimePins), `${sig.id} runtimePins`);
+  }
+});
+
+// --- Self-review: behavior against a *real* createScanContext, not the fake ---
+
+function makeRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-'));
+  writeFileSync(join(root, 'package.json'), '{"name":"x"}');
+  writeFileSync(join(root, 'package-lock.json'), '{}');
+  mkdirSync(join(root, 'services', 'api'), { recursive: true });
+  writeFileSync(join(root, 'services', 'api', 'go.mod'), 'module x\n\ngo 1.21\n');
+  return root;
+}
+
+test('real ScanContext: detects root-level manifest and a manifest nested in a subdirectory', () => {
+  const ctx = createScanContext(makeRepo());
+  assert.deepEqual(detectStack(ctx), ['go', 'node']);
+});
+
+test('real ScanContext: a manifest only in a subdirectory (services/api/go.mod) is still detected', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-nested-'));
+  mkdirSync(join(root, 'services', 'api'), { recursive: true });
+  writeFileSync(join(root, 'services', 'api', 'go.mod'), 'module x\n\ngo 1.21\n');
+  const ctx = createScanContext(root);
+  // Deliberate: the brief's contract is "manifest files at any depth", so a
+  // buried manifest in one subdirectory of an otherwise-unrelated repo marks
+  // the whole repo as that stack. See report for the tradeoff this implies.
+  assert.deepEqual(detectStack(ctx), ['go']);
+});
+
+test('real ScanContext: no recognizable manifest returns [], not undefined or a throw', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-empty-'));
+  writeFileSync(join(root, 'README.md'), '# hi\n');
+  const ctx = createScanContext(root);
+  assert.deepEqual(detectStack(ctx), []);
+});
+
+test('real ScanContext: ignored directories (node_modules) do not trigger a false positive', () => {
+  const root = mkdtempSync(join(tmpdir(), 'harness-stack-ignored-'));
+  mkdirSync(join(root, 'node_modules', 'some-dep'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'some-dep', 'go.mod'), 'module dep\n');
+  writeFileSync(join(root, 'README.md'), '# hi\n');
+  const ctx = createScanContext(root);
+  assert.deepEqual(detectStack(ctx), []);
+});
+
+test('real ScanContext: detectStack output is sorted and identical across repeated calls', () => {
+  const ctx = createScanContext(makeRepo());
+  const first = detectStack(ctx);
+  const second = detectStack(ctx);
+  assert.deepEqual(first, second);
+  assert.deepEqual(first, [...first].sort());
+});
+
+test('signatureFor returns the matching signature', () => {
+  const sig = signatureFor('node');
+  assert.equal(sig.id, 'node');
+  assert.ok(sig.manifest.includes('package.json'));
+});
+
+test('signatureFor returns null for an unknown id rather than throwing', () => {
+  assert.equal(signatureFor('nope'), null);
+});
