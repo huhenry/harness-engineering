@@ -1,0 +1,15 @@
+{
+  "name": "harness-engineering",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Assess, scaffold, and evidence-verify AI coding agent harnesses.",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/**/*.mjs",
+    "assess": "node scripts/assess.mjs",
+    "scaffold": "node scripts/scaffold.mjs",
+    "verify": "node scripts/verify.mjs"
+  }
+}
