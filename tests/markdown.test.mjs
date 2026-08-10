@@ -124,3 +124,58 @@ test('a fence-like line using the other marker style stays as code content, not 
   const p = parseMarkdown(doc);
   assert.equal(p.codeBlocks[0].code, 'echo before\n~~~~\necho after');
 });
+
+// --- CRLF line endings ---
+// AGENTS.md files authored on Windows routinely ship with CRLF. A trailing \r
+// left on every line breaks the anchored heading regex entirely (0 headings,
+// 0 sections, 0 commands extracted) — a silent "nothing to verify" rather
+// than an error.
+
+const DOC_CRLF = DOC.replace(/\n/g, '\r\n');
+
+test('a CRLF document parses headings identically to its LF equivalent', () => {
+  const lf = parseMarkdown(DOC);
+  const crlf = parseMarkdown(DOC_CRLF);
+  assert.deepEqual(crlf.headings.map((h) => h.text), lf.headings.map((h) => h.text));
+  assert.deepEqual(crlf.headings.map((h) => h.level), lf.headings.map((h) => h.level));
+  assert.deepEqual(crlf.headings.map((h) => h.line), lf.headings.map((h) => h.line));
+});
+
+test('a CRLF document has the same lineCount as its LF equivalent', () => {
+  const lf = parseMarkdown(DOC);
+  const crlf = parseMarkdown(DOC_CRLF);
+  assert.equal(crlf.lineCount, lf.lineCount);
+});
+
+test('a CRLF document does not gain or lose a line when it ends in \\r\\n vs \\n', () => {
+  const endsLf = parseMarkdown('# A\r\nbody\n');
+  const endsCrlf = parseMarkdown('# A\r\nbody\r\n');
+  assert.equal(endsLf.lineCount, endsCrlf.lineCount);
+});
+
+test('a fenced # comment inside a CRLF document is still not parsed as a heading', () => {
+  const p = parseMarkdown(DOC_CRLF);
+  assert.deepEqual(p.headings.map((h) => h.text), ['Project', 'Verification', 'Constraints']);
+  const verify = findSection(p, /verif/i);
+  assert.equal(verify.codeBlocks.length, 1);
+  assert.equal(verify.codeBlocks[0].lang, 'bash');
+});
+
+test('bashCommands from a CRLF document come back without stray \\r', () => {
+  const p = parseMarkdown(DOC_CRLF);
+  const cmds = bashCommands(findSection(p, /verif/i));
+  assert.deepEqual(cmds, ['go test ./...', 'golangci-lint run']);
+  for (const cmd of cmds) assert.ok(!cmd.includes('\r'), `command ${JSON.stringify(cmd)} contains \\r`);
+});
+
+test('local link targets from a CRLF document have no trailing \\r', () => {
+  const p = parseMarkdown(DOC_CRLF);
+  assert.deepEqual(p.localLinks.map((l) => l.target), ['docs/rubric.md']);
+});
+
+test('a lone-\\r (classic Mac) document also parses headings correctly', () => {
+  const doc = DOC.replace(/\n/g, '\r');
+  const p = parseMarkdown(doc);
+  assert.deepEqual(p.headings.map((h) => h.text), ['Project', 'Verification', 'Constraints']);
+  assert.equal(p.lineCount, 16);
+});

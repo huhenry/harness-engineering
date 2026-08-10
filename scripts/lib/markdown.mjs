@@ -5,7 +5,13 @@ const EXTERNAL = /^(https?:|mailto:|#)/;
 
 /** Parse a Markdown document into headings, sections, code blocks and local links. */
 export function parseMarkdown(text) {
-  const lines = text === '' ? [] : text.split('\n');
+  // Normalize CRLF and lone-CR (classic Mac) line endings before splitting.
+  // Left unnormalized, a trailing \r survives on every line: `.` in HEADING
+  // excludes \r and the anchored `$` requires true end-of-string, so headings
+  // never match at all on a CRLF document — silently producing zero
+  // sections and zero extracted commands instead of an error.
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const lines = normalized === '' ? [] : normalized.split('\n');
   const headings = [];
   const codeBlocks = [];
   const localLinks = [];
