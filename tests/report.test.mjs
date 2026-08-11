@@ -4,13 +4,19 @@ import { buildReport, renderMarkdown, SCHEMA_VERSION } from '../scripts/lib/repo
 
 const NOW = new Date('2026-08-10T12:00:00Z');
 
+// loop.score is deliberately nonzero (2, not 0). Review finding: with every
+// score summed via SUBSYSTEMS.reduce(...), a 0 is the additive identity — a
+// bug that double-counts, drops, or swaps loop's contribution to score.total
+// is invisible if loop contributes nothing to the sum either way. score: 2 +
+// gapIds: ['loop.no-budget-cap'] also mirrors a real loop.mjs output at that
+// score (rungs 1-2 passed => past 'loop.none', rung 3 partially failing).
 const results = {
   instructions: { score: 4, cappedByEvidence: false, evidence: [{ kind: 'file', path: 'AGENTS.md', note: '80 lines' }], gapIds: [] },
   tools: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['tools.no-least-privilege-doc'] },
   environment: { score: 3, cappedByEvidence: true, evidence: [], gapIds: ['environment.no-container'] },
   state: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['state.no-handoff'] },
   feedback: { score: 2, cappedByEvidence: true, evidence: [], gapIds: ['feedback.commands-unverified'] },
-  loop: { score: 0, cappedByEvidence: false, evidence: [], gapIds: ['loop.none'] },
+  loop: { score: 2, cappedByEvidence: false, evidence: [], gapIds: ['loop.no-budget-cap'] },
 };
 
 // `lang: 'en'` is required here (task-14 brief section C): per the ruling in
@@ -29,7 +35,7 @@ test('report matches the documented schema shape', () => {
   assert.equal(r.repo, '/tmp/demo');
   assert.equal(r.generatedAt, NOW.toISOString());
   assert.deepEqual(r.stack, ['go']);
-  assert.deepEqual(r.score, { total: 15, max: 24 });
+  assert.deepEqual(r.score, { total: 17, max: 24 });
   assert.deepEqual(r.evidence, { verified: false, verifiedAt: null });
 });
 
@@ -42,8 +48,8 @@ test('subsystems appear in canonical order with max 4', () => {
 
 test('gap ids expand into full gap objects with roi', () => {
   const gap = build().subsystems.find((s) => s.id === 'loop').gaps[0];
-  assert.equal(gap.id, 'loop.none');
-  assert.equal(gap.severity, 'low');
+  assert.equal(gap.id, 'loop.no-budget-cap');
+  assert.equal(gap.severity, 'high');
   assert.equal(typeof gap.roi, 'number');
   assert.ok(gap.roi >= 1 && gap.roi <= 10);
   assert.ok(gap.title && gap.why && gap.fix, 'localized text must be materialized');
@@ -81,10 +87,10 @@ test('level carries unmetGates for the next gate up', () => {
 // each with its own matching lang.
 test('markdown renders in both languages with score and level', () => {
   const en = renderMarkdown(build({ lang: 'en' }), 'en');
-  assert.match(en, /Score: 15 \/ 24/);
+  assert.match(en, /Score: 17 \/ 24/);
   assert.match(en, /Level: L3 Continuous/);
   const zh = renderMarkdown(build({ lang: 'zh' }), 'zh');
-  assert.match(zh, /得分：15 \/ 24/);
+  assert.match(zh, /得分：17 \/ 24/);
   assert.match(zh, /等级：L3 可续跑/);
 });
 
