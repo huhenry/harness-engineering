@@ -77,7 +77,7 @@ export function score({ ctx, config }) {
     evidence.push({ kind: 'file', path: wf, note: 'scheduled workflow' });
   }
   if (hasLoopDir) evidence.push({ kind: 'file', path: ctx.list([LOOP_DOCS_GLOB])[0], note: 'loop doc' });
-  if (configDeclaresLoop) evidence.push({ kind: 'command', path: 'harness.config.json#loop', note: 'declared' });
+  if (configDeclaresLoop) evidence.push({ kind: 'file', path: 'harness.config.json', note: 'loop field declared' });
   if (ctx.exists('evaluator-rubric.md')) evidence.push({ kind: 'file', path: 'evaluator-rubric.md', note: 'maker-checker rubric' });
 
   // Every condition here is a fact about documentation and configuration —
