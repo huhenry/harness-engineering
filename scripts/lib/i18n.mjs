@@ -16,6 +16,12 @@ export const MESSAGES = {
     'report.needsEvidence': 'capped — run `verify --run` for evidence',
     'report.noGaps': 'No gaps found.',
     'report.gapsHeading': 'Gaps by ROI',
+    'report.subsystemsHeading': 'Subsystem Scores',
+    'report.colSubsystem': 'Subsystem',
+    'report.colScore': 'Score',
+    'report.colStatus': 'Status',
+    'report.why': 'Why: {text}',
+    'report.fix': 'Fix: {text}',
 
     // --- maturity levels ---
     'level.0': 'Ad-hoc',
@@ -161,6 +167,12 @@ export const MESSAGES = {
     'report.needsEvidence': '已封顶 —— 跑 `verify --run` 补证据',
     'report.noGaps': '未发现差距。',
     'report.gapsHeading': '差距清单（按 ROI 排序）',
+    'report.subsystemsHeading': '各子系统得分',
+    'report.colSubsystem': '子系统',
+    'report.colScore': '得分',
+    'report.colStatus': '状态',
+    'report.why': '原因：{text}',
+    'report.fix': '修复建议：{text}',
 
     // --- 成熟度等级 ---
     'level.0': '无序',
