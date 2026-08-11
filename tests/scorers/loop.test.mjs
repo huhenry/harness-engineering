@@ -88,6 +88,42 @@ test('a config.loop field satisfies the rung-2 entry-point check', () => {
   assert.ok(r.score >= 2);
 });
 
+test('a scheduled GitHub Actions workflow using the .yaml extension also satisfies the rung-2 entry-point check', () => {
+  // Same bug class as feedback.mjs's CI-file check: GitHub Actions accepts
+  // both .yml and .yaml under .github/workflows/, and both files use the
+  // same shared CI_WORKFLOW_GLOBS to avoid drifting apart again.
+  const files = {
+    'AGENTS.md': 'Runs an autonomous loop.\n',
+    '.github/workflows/nightly.yaml': 'on:\n  schedule:\n    - cron: "0 0 * * *"\n',
+  };
+  const r = score(input({ files }));
+  assert.ok(r.score >= 2);
+});
+
+// --- review finding: LOOP_KEYWORD_RE must be word-boundary anchored ---
+
+test('a bare substring match inside an unrelated word must not count as a loop keyword ("loophole", "micron")', () => {
+  const files = {
+    'README.md': 'We are developing a new feature and closing a loophole in the micron-precision config.\n',
+  };
+  const r = score(input({ files }));
+  assert.equal(r.score, 0);
+  assert.ok(r.gapIds.includes('loop.none'));
+  assert.equal(r.evidence.some((e) => e.note === 'loop pattern described'), false);
+});
+
+test('genuine standalone Latin loop keywords are still recognized after anchoring', () => {
+  const files = { 'README.md': 'This project uses an autonomous agent loop, run on a cron schedule.\n' };
+  const r = score(input({ files }));
+  assert.ok(r.score >= 1);
+});
+
+test('genuine CJK loop keywords are still recognized after anchoring (CJK alternatives must not get \\b)', () => {
+  const files = { 'README.md': '本项目使用自主循环执行任务。\n' };
+  const r = score(input({ files }));
+  assert.ok(r.score >= 1);
+});
+
 test('scores 2 with no-stop-condition and no-budget-cap when neither is documented', () => {
   const files = {
     'AGENTS.md': 'Runs an autonomous loop.\n',

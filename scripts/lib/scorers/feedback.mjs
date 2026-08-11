@@ -1,5 +1,6 @@
 import { ladder } from './ladder.mjs';
 import { VERIFY_ROLES } from '../config.mjs';
+import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
 
 export const id = 'feedback';
 
@@ -7,7 +8,6 @@ export const id = 'feedback';
 // suite at all", not "is it organized a particular way".
 const TEST_FILE_PATTERNS = ['**/*_test.go', '**/test_*.py', '**/*.test.*', 'tests/**', 'spec/**'];
 
-const CI_WORKFLOW_GLOB = '.github/workflows/*.yml';
 const OTHER_CI_FILES = ['.gitlab-ci.yml', 'Jenkinsfile'];
 
 const OBSERVABILITY_RE = /healthz|health check|日志位置|observability/i;
@@ -35,11 +35,27 @@ export function score({ ctx, config, verifyReport }) {
   const hasDeclaredCommands = VERIFY_ROLES.some((r) => isDeclared(config, r));
 
   const commands = commandsOf(verifyReport);
-  // A single flag drives every evidence-gated decision below. A malformed
-  // verifyReport (present but with no usable `commands` array) tells us
-  // nothing more than an absent one does, so it is folded into the same
-  // "unverified" bucket rather than treated as if it were real evidence.
-  const unverified = commands === null;
+  // "Is there any usable execution evidence at all" — one named flag,
+  // deliberately at report level rather than per-role, feeding every
+  // evidence-vs-declaration branch below (secondCheckKindOk, e2eOk). A
+  // malformed verifyReport (no usable `commands` array) tells us nothing
+  // more than an absent one does, and neither does a structurally valid but
+  // *empty* one ({ commands: [] } — exactly what Task 18's verify produces
+  // when nothing is declared, or when every declared command is blocked by
+  // the safety list) — both fold into the same bucket. Review finding: an
+  // earlier version keyed this on `commands === null` alone, so a { commands:
+  // [] } report read as "verified" for these two checks while still reading
+  // as "unverified" for cappedByEvidence below — the two notions of "do we
+  // have evidence" disagreed, and single-check-kind/no-e2e fired even when
+  // the declared roles for them were present, just never run. One flag used
+  // everywhere is what stops that drift — the same class of bug that hit
+  // PRUNE_DIRS/DEFAULT_IGNORE, docker.runtimePins/manifest, and
+  // CONTAINER_FILES before. NOT a per-role notion on purpose: downgrading
+  // secondCheckKindOk just because the report lacks a *lint* entry (while a
+  // *test* entry is present) would let a repo reach rung 3 on a test run
+  // alone, which breaks rung 3's own spec (test passed AND a second check
+  // kind passed).
+  const noEvidence = commands === null || commands.length === 0;
   const statusOf = (role) => commands?.find((c) => c && c.role === role)?.status ?? null;
 
   const testStatus = statusOf('test');
@@ -56,15 +72,15 @@ export function score({ ctx, config, verifyReport }) {
   const lintOrTypecheckDeclared = isDeclared(config, 'lint') || isDeclared(config, 'typecheck');
   // Rung 3's "second check kind" condition is genuinely about *evidence*
   // (lint/typecheck actually ran and passed) whenever we have a report to
-  // read. But when there is no report at all, judging it against
+  // read. But when there is no evidence at all, judging it against
   // lintOrTypecheckPassed would *always* fail — every unverified repo would
   // get flagged for this regardless of its config, which tells the user
   // nothing about their actual setup. Falling back to "did they declare a
   // second check kind" surfaces a real, visible gap (or its absence) from
   // config alone, without pretending we observed a run that never happened.
-  const secondCheckKindOk = unverified ? lintOrTypecheckDeclared : lintOrTypecheckPassed;
+  const secondCheckKindOk = noEvidence ? lintOrTypecheckDeclared : lintOrTypecheckPassed;
 
-  const ciFiles = ctx.list([CI_WORKFLOW_GLOB]);
+  const ciFiles = ctx.list(CI_WORKFLOW_GLOBS);
   const ciFile = ciFiles[0] ?? OTHER_CI_FILES.find((f) => ctx.exists(f)) ?? null;
   const hasCi = ciFile !== null;
 
@@ -75,13 +91,13 @@ export function score({ ctx, config, verifyReport }) {
   const e2eOrSmokePassed = statusOf('e2e') === 'passed' || statusOf('smoke') === 'passed';
   const e2eOrSmokeDeclared = isDeclared(config, 'e2e') || smokeDeclared;
   // Same reasoning as secondCheckKindOk above: "did e2e/smoke pass" is only
-  // an answerable question once something has actually been run. Without a
-  // report, downgrading to "was an e2e or smoke command even declared"
+  // an answerable question once something has actually been run. Without
+  // evidence, downgrading to "was an e2e or smoke command even declared"
   // keeps this gap meaningful (a repo that never mentions e2e/smoke really
   // is missing something, and that's visible without running anything)
   // instead of either lying ("it passed") or going silent (which would hide
   // a real, statically-visible gap behind the fact that nobody ran verify).
-  const e2eOk = unverified ? e2eOrSmokeDeclared : e2eOrSmokePassed;
+  const e2eOk = noEvidence ? e2eOrSmokeDeclared : e2eOrSmokePassed;
 
   const { score, gapIds: ladderGaps } = ladder([
     { score: 1, checks: [{ ok: hasTests, gapId: 'feedback.no-tests' }] },
@@ -126,15 +142,16 @@ export function score({ ctx, config, verifyReport }) {
   // promise is exactly the kind of broken feedback loop this tool exists to
   // eliminate.
   //
-  // Deliberately keyed on !hasTestEvidence rather than the coarser
-  // `unverified` flag: a verifyReport can be non-null and structurally valid
-  // (a real `commands` array) yet still carry no test entry — e.g. `{
-  // commands: [] }`. `unverified` would read false there (there IS an array
-  // to read), which would wrongly report cappedByEvidence: false even though
-  // the score is, in fact, being held back by nothing but missing test
-  // evidence. hasTestEvidence tracks the exact condition rung 3's first
-  // check depends on, so it can't drift out of sync with what's actually
-  // capping the score.
+  // Deliberately keyed on !hasTestEvidence, not on the report-level
+  // `noEvidence` flag used above for secondCheckKindOk/e2eOk: cappedByEvidence
+  // answers a narrower question — specifically, is missing *test*-role
+  // evidence the reason rung 3's first check fails right now — so it must
+  // track hasTestEvidence exactly, not a coarser "is there any evidence for
+  // anything" signal. (The two happen to agree whenever commands is null or
+  // empty, since hasTestEvidence is false in both those cases too; they can
+  // only diverge when commands has entries for other roles but not 'test' —
+  // and in that case cappedByEvidence: true is still the correct answer,
+  // since re-running verify with the test role included would unlock rung 3.)
   const cappedByEvidence = hasTests && hasDeclaredCommands && !hasTestEvidence;
 
   return { score, cappedByEvidence, evidence, gapIds: ladderGaps };

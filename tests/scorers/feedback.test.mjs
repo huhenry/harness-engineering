@@ -112,6 +112,20 @@ test('flags no-ci when no CI configuration file exists', () => {
   assert.ok(r.gapIds.includes('feedback.no-ci'));
 });
 
+test('recognizes .github/workflows/*.yaml (not just .yml) as a CI configuration', () => {
+  // Review finding: GitHub Actions accepts both .yml and .yaml under
+  // .github/workflows/. A repo with a real, working .yaml workflow was
+  // being told it had no CI, with no fix available short of renaming the
+  // file to satisfy the tool — exactly the "gap never clears" failure class
+  // this project exists to eliminate.
+  const report = { commands: [
+    { role: 'test', status: 'passed' }, { role: 'lint', status: 'passed' }, { role: 'e2e', status: 'passed' },
+  ] };
+  const files = { ...HAS_TESTS, '.github/workflows/ci.yaml': 'on: push\njobs: {}\n' };
+  const r = score(input({ files, config: { verify: { test: 'x', lint: 'y', e2e: 'z' } }, verifyReport: report }));
+  assert.equal(r.gapIds.includes('feedback.no-ci'), false);
+});
+
 test('recognizes .gitlab-ci.yml as a CI configuration', () => {
   const report = { commands: [
     { role: 'test', status: 'passed' }, { role: 'lint', status: 'passed' }, { role: 'e2e', status: 'passed' },
@@ -245,6 +259,27 @@ test('cappedByEvidence is true for a structurally valid but empty commands array
   assert.equal(r.cappedByEvidence, true);
   assert.ok(r.gapIds.includes('feedback.commands-unverified'));
   assert.equal(r.gapIds.includes('feedback.commands-failing'), false);
+});
+
+// --- review finding: an empty commands array must agree with cappedByEvidence
+// on "no usable evidence" for the section-D downgrades too, not just for
+// cappedByEvidence itself. Task 18's verify produces exactly { commands: [] }
+// when nothing is declared, or when every declared command is blocked by the
+// safety list — so this is a real, expected shape, not a contrived one. ---
+
+test('an empty commands array falls back to declaration-based checks, same as a null report — declaring lint and smoke must suppress single-check-kind and no-e2e', () => {
+  const config = { verify: { test: 'x', lint: 'y', smoke: 'z' } };
+  const r = score(input({ files: HAS_TESTS, config, verifyReport: { commands: [] } }));
+  assert.equal(r.gapIds.includes('feedback.single-check-kind'), false);
+  assert.equal(r.gapIds.includes('feedback.no-e2e'), false);
+});
+
+test('the L4 thesis holds for an empty commands array too: score can never exceed 2 without real test evidence, no matter how much is declared', () => {
+  const config = { verify: { test: 'x', lint: 'y', e2e: 'z', smoke: 'w' } };
+  const r = score(input({ files: HAS_TESTS, config, verifyReport: { commands: [] } }));
+  assert.ok(r.score <= 2);
+  assert.equal(r.cappedByEvidence, true);
+  assert.ok(r.gapIds.includes('feedback.commands-unverified'));
 });
 
 // --- malformed verify report must not crash ---

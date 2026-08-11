@@ -1,4 +1,5 @@
 import { ladder } from './ladder.mjs';
+import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
 
 export const id = 'loop';
 
@@ -13,7 +14,18 @@ export const id = 'loop';
 const DOC_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md'];
 const LOOP_DOCS_GLOB = 'loop/*.md';
 
-const LOOP_KEYWORD_RE = /autonomous|loop|cron|scheduled|自主|循环/i;
+// Review finding: the Latin alternatives are common English word fragments
+// ('loop' inside 'loophole', 'cron' inside 'micron') and matched unanchored
+// as bare substrings, so a doc that never once mentions an agentic loop
+// could still score a rung and get told "loop pattern described". Each
+// Latin word is wrapped with \b...\b (as one group, so the boundary applies
+// per-alternative) to require it stand alone. The CJK alternatives
+// (自主/循环) are deliberately kept OUTSIDE that group and un-anchored: \b is
+// defined in terms of [A-Za-z0-9_] word characters and does not recognize a
+// transition into/out of CJK text as a boundary, so wrapping them the same
+// way would silently stop matching real Chinese prose (no whitespace
+// between words) rather than fixing anything.
+const LOOP_KEYWORD_RE = /\b(autonomous|loop|cron|scheduled)\b|自主|循环/i;
 const STOP_CONDITION_RE = /stop condition|exit criteria|停止条件|退出条件/i;
 const BUDGET_CAP_RE = /max iterations|budget|token cap|最大迭代|预算/i;
 const MAKER_CHECKER_RE = /maker-checker|reviewer agent|角色分离/i;
@@ -37,8 +49,12 @@ export function score({ ctx, config }) {
   const docs = allDocsText(ctx);
   const hasKeyword = LOOP_KEYWORD_RE.test(docs);
 
-  const scheduledWorkflow = ctx.list(['.github/workflows/*.yml'])
-    .some((f) => /schedule:/.test(ctx.read(f) ?? ''));
+  // Same CI_WORKFLOW_GLOBS as feedback.mjs's no-ci check (see ci-workflows.mjs)
+  // — GitHub Actions accepts both .yml and .yaml, and a repo whose only
+  // scheduled workflow happens to use the less-common extension must not be
+  // told it has no loop entry point.
+  const scheduledWorkflowFile = ctx.list(CI_WORKFLOW_GLOBS).find((f) => /schedule:/.test(ctx.read(f) ?? '')) ?? null;
+  const scheduledWorkflow = scheduledWorkflowFile !== null;
   const hasLoopDir = ctx.list([LOOP_DOCS_GLOB]).length > 0;
   const configDeclaresLoop = Boolean(config?.loop);
   const hasEntryPoint = scheduledWorkflow || hasLoopDir || configDeclaresLoop;
@@ -72,10 +88,7 @@ export function score({ ctx, config }) {
   const keywordFile = DOC_FILES.find((f) => LOOP_KEYWORD_RE.test(ctx.read(f) ?? ''));
   if (keywordFile) evidence.push({ kind: 'file', path: keywordFile, note: 'loop pattern described' });
   else if (hasKeyword) evidence.push({ kind: 'file', path: 'loop/', note: 'loop pattern described' });
-  if (scheduledWorkflow) {
-    const wf = ctx.list(['.github/workflows/*.yml']).find((f) => /schedule:/.test(ctx.read(f) ?? ''));
-    evidence.push({ kind: 'file', path: wf, note: 'scheduled workflow' });
-  }
+  if (scheduledWorkflow) evidence.push({ kind: 'file', path: scheduledWorkflowFile, note: 'scheduled workflow' });
   if (hasLoopDir) evidence.push({ kind: 'file', path: ctx.list([LOOP_DOCS_GLOB])[0], note: 'loop doc' });
   if (configDeclaresLoop) evidence.push({ kind: 'file', path: 'harness.config.json', note: 'loop field declared' });
   if (ctx.exists('evaluator-rubric.md')) evidence.push({ kind: 'file', path: 'evaluator-rubric.md', note: 'maker-checker rubric' });
