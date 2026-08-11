@@ -125,7 +125,17 @@ export function score({ ctx, config, verifyReport }) {
   // told "go verify" — running verify would change nothing, and that dead-end
   // promise is exactly the kind of broken feedback loop this tool exists to
   // eliminate.
-  const cappedByEvidence = hasTests && hasDeclaredCommands && unverified;
+  //
+  // Deliberately keyed on !hasTestEvidence rather than the coarser
+  // `unverified` flag: a verifyReport can be non-null and structurally valid
+  // (a real `commands` array) yet still carry no test entry — e.g. `{
+  // commands: [] }`. `unverified` would read false there (there IS an array
+  // to read), which would wrongly report cappedByEvidence: false even though
+  // the score is, in fact, being held back by nothing but missing test
+  // evidence. hasTestEvidence tracks the exact condition rung 3's first
+  // check depends on, so it can't drift out of sync with what's actually
+  // capping the score.
+  const cappedByEvidence = hasTests && hasDeclaredCommands && !hasTestEvidence;
 
   return { score, cappedByEvidence, evidence, gapIds: ladderGaps };
 }

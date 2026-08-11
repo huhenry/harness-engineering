@@ -234,6 +234,19 @@ test('cappedByEvidence is false once a verify report exists, even if it reports 
   assert.equal(r.cappedByEvidence, false);
 });
 
+test('cappedByEvidence is true for a structurally valid but empty commands array (still no test evidence)', () => {
+  // Regression: a report can be non-null and have a real `commands` array
+  // yet still say nothing about the test role (e.g. { commands: [] }). The
+  // score is capped for exactly the same reason as a fully absent report —
+  // no evidence for the test command — so cappedByEvidence must say so too,
+  // not read false just because *some* array happened to be present.
+  const r = score(input({ files: HAS_TESTS, config: { verify: { test: 'x' } }, verifyReport: { commands: [] } }));
+  assert.equal(r.score, 2);
+  assert.equal(r.cappedByEvidence, true);
+  assert.ok(r.gapIds.includes('feedback.commands-unverified'));
+  assert.equal(r.gapIds.includes('feedback.commands-failing'), false);
+});
+
 // --- malformed verify report must not crash ---
 
 test('a verify report with no commands array at all does not throw and behaves as unverified', () => {
