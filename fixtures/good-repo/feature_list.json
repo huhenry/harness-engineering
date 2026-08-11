@@ -1,0 +1,6 @@
+{
+  "features": [
+    { "id": "healthz-endpoint", "title": "Expose /healthz endpoint", "status": "done" },
+    { "id": "order-validation", "title": "Validate incoming order payloads", "status": "in-progress" }
+  ]
+}

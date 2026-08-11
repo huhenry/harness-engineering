@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "verify": {
+    "bootstrap": "./init.sh",
+    "test": "go test ./...",
+    "lint": "golangci-lint run",
+    "smoke": "curl -fsS http://localhost:8080/healthz"
+  },
+  "ignore": []
+}
