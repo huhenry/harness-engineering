@@ -651,6 +651,137 @@ test('round 4: worst-case timing under the length cap after adding line-continua
   }
 });
 
+// --- round 5, Critical: destructive-rm and git-destructive both required
+// the dangerous flag immediately after the tool/subcommand word (at most
+// other flags in between, for rm) -- a single non-flag operand first
+// defeated the match. GNU getopt (and git's own argument parsing) permutes
+// options after operands by default, confirmed against real rm and real
+// git, not reasoned about (see task-16-report.md's round-5 section for the
+// platform comparison: BSD rm doesn't permute and is safe, GNU coreutils
+// 9.5 does and deletes -- Linux is where CI and servers run).
+const ROUND5_RM_PERMUTATION_MUST_BLOCK = [
+  'rm a -rf /',
+  'rm dir1 dir2 -rf',
+  'rm ./build -rf',
+  'rm foo --force',
+  'rm foo --recursive /',
+  'rm a -r',
+];
+
+test('round 5 Critical: an operand before the dangerous rm flag no longer defeats destructive-rm', () => {
+  for (const cmd of ROUND5_RM_PERMUTATION_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, 'destructive-rm', `wrong pattern for: ${cmd}`);
+  }
+});
+
+test('round 5 Critical: rm -- -rf is deliberately NOT blocked (-- means -rf is a filename, not a flag)', () => {
+  // Per GNU/POSIX convention, `--` ends option parsing; everything after
+  // it is a filename. `rm -- -rf` deletes (or errors on) a file literally
+  // named "-rf" -- it does not recursively force-delete anything. This is
+  // the explicit, documented decision from the round-5 brief, not an
+  // oversight; pinned here so it can't silently regress into a false
+  // positive OR silently regress back into the round-5 leak.
+  assert.equal(checkCommand('rm -- -rf').blocked, false);
+});
+
+const ROUND5_GIT_PERMUTATION_MUST_BLOCK = [
+  'git reset HEAD~1 --hard',
+  'git reset --quiet --hard HEAD~1',
+  'git clean untracked.txt -f',
+  'git clean dirA -fd',
+];
+
+test('round 5 Critical: an operand or another flag before --hard/-f no longer defeats git-destructive', () => {
+  for (const cmd of ROUND5_GIT_PERMUTATION_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, 'git-destructive', `wrong pattern for: ${cmd}`);
+  }
+});
+
+test('round 5: destructive-rm and git-destructive permutation fixes introduce no new false positives', () => {
+  for (const cmd of [
+    'rm file.txt',
+    'rmdir empty',
+    'rm -i x',
+    'rm -v file.txt',
+    'rm --interactive=once file.txt',
+    'rm --preserve-root file.txt',
+    'rm --force-something-fake /path',
+    'rm --recursively-fake /path',
+    'git status',
+    'git reset --soft HEAD~1',
+    'git clean -n',
+    'git log --grep=reset',
+  ]) {
+    assert.equal(checkCommand(cmd).blocked, false, `should allow: ${cmd}`);
+  }
+});
+
+test('round 5: accepted over-block -- git clean -n -f is blocked even though real git treats -n as always winning', () => {
+  // Verified against a real git repo: `git clean -n -f` (and -f -n,
+  // either order) only ever prints "Would remove ..." and deletes
+  // nothing -- -n's presence disables the actual deletion regardless of
+  // position relative to -f. Modeling that cancellation would require
+  // scanning for -n/--dry-run anywhere in the same clean invocation before
+  // deciding -f is dangerous -- real complexity for a combination that is
+  // vanishingly rare in practice (if you want a dry run you use -n alone;
+  // if you want to force-clean you use -f alone). Accepted as a false
+  // positive, consistent with this module's standing bias, and pinned
+  // here as a conscious decision rather than an untested corner.
+  assert.equal(checkCommand('git clean -n -f').blocked, true);
+  assert.equal(checkCommand('git clean -f -n').blocked, true);
+});
+
+test('round 5: hard rules (destructive-rm) stay non-overridable in permuted form too', () => {
+  assert.equal(checkCommand('rm a -rf /', [/^rm a -rf \/$/]).blocked, true);
+});
+
+// --- round 5: "apply the same lens to every other rule" -- checked every
+// rule whose match could in principle depend on argument order, most by
+// construction (they already use an unbounded [\s\S]* gap that tolerates
+// any permutation, unlike destructive-rm/git-destructive's now-fixed
+// restricted gaps), several with an explicit permuted probe for evidence
+// rather than just reasoning about it.
+test('round 5: cp/tee-to-device, docker, kubectl, terraform/helm, npm/cargo, and dd all already tolerate argument permutation', () => {
+  // disk-write's cp/tee sub-rule: device path can appear anywhere relative
+  // to other flags, since the gap is unbounded.
+  assert.equal(checkCommand('cp /dev/sda backup.img').patternId, 'disk-write');
+  assert.equal(checkCommand('tee /dev/sda < input.txt').patternId, 'disk-write');
+  // container-prune / k8s-delete: only the bare subcommand name is
+  // required, no flag-position dependency to permute in the first place.
+  assert.equal(checkCommand('docker system prune --force').patternId, 'container-prune');
+  assert.equal(checkCommand('kubectl delete -n staging pod x').patternId, 'k8s-delete');
+  // iac-apply / publish: unbounded gap tolerates flags before or after the
+  // subcommand.
+  assert.equal(checkCommand('terraform -no-color apply -auto-approve').patternId, 'iac-apply');
+  assert.equal(checkCommand('helm upgrade --install myrelease chart/ --namespace ns').patternId, 'iac-apply');
+  assert.equal(checkCommand('npm publish --access public --tag latest').patternId, 'publish');
+  // disk-write's dd: bare \bdd\b, no flag-order dependency to permute at all.
+  assert.equal(checkCommand('dd of=/dev/sda bs=1M count=10').patternId, 'disk-write');
+});
+
+test('round 5: token-scan quadratic check -- many "rm"/"git reset" tokens with no dangerous flag stay fast under the cap', () => {
+  // The dedicated matchers introduced this round scan every token after
+  // each occurrence of the anchor word; an adversarial input packed with
+  // nothing but the anchor word (never resolving) is the token-level
+  // analog of round 3's restart-point regex shape. MAX_COMMAND_LENGTH
+  // already bounds this the same way it bounds everything else, but
+  // that's worth demonstrating, not assuming.
+  const budgetMs = 100;
+  const rmCmd = 'rm '.repeat(682) + 'x'; // packed close to the 2048 cap
+  const gitResetCmd = 'git reset '.repeat(204) + 'x';
+  for (const cmd of [rmCmd, gitResetCmd]) {
+    assert.ok(cmd.length <= 2048, `sanity: this test's inputs must stay under MAX_COMMAND_LENGTH (got ${cmd.length})`);
+    const start = Date.now();
+    checkCommand(cmd);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 20))}... (len ${cmd.length})`);
+  }
+});
+
 test('round 2: [^;&|]* rules still stop at a shell separator, so piped/chained commands are not blocked', () => {
   assert.equal(checkCommand('git status | grep push').blocked, false);
   assert.equal(checkCommand('echo hello && git status').blocked, false);

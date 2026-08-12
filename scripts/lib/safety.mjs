@@ -127,6 +127,35 @@
  *      with an open quote, and `checkCommand` treats that as an immediate,
  *      non-overridable block (`'unterminated-quote'`) rather than matching
  *      against segments derived from a parse it knows is unreliable.
+ *
+ * Fifth adversarial review round (fix base a7f5644), found while probing
+ * the round-4 fix, turned out to be unrelated to it: destructive-rm and
+ * git-destructive's `reset`/`clean` sub-cases both required the dangerous
+ * flag to sit *immediately* after the tool/subcommand word (with, at most,
+ * other flags in between for `rm`) — a single non-flag operand first
+ * defeated both. `rm a -rf /`, `rm foo --force`, `git reset HEAD~1 --hard`,
+ * `git clean untracked.txt -f` all walked straight through. This is real,
+ * not theoretical: GNU coreutils' getopt permutes options after operands
+ * by default, and the same is true of git's own argument parsing —
+ * confirmed against both a real GNU rm and a real git repo, not reasoned
+ * about, including a same-command comparison across platforms (BSD `rm
+ * <dir> -rf` errors and leaves the directory alone; GNU coreutils 9.5 `rm
+ * <dir> -rf` deletes the tree — Linux, the dangerous platform, is where CI
+ * and servers actually run). Every other rule in this file already uses an
+ * unbounded `[\s\S]*` gap between tool and subcommand/flag, which
+ * inherently tolerates any argument order; these two were the only
+ * holdouts still using a *restricted* gap (destructive-rm's flag-only
+ * repeat group; git-destructive's zero-tolerance `reset\s+--hard`/
+ * `clean\s+flags`), which is exactly what broke under permutation. Fixed
+ * by moving both to token-based scans (`hasDangerousRm`,
+ * `hasGitDestructive`, below) that check every token *after* the relevant
+ * word, not just the adjacent ones, with an explicit, documented decision
+ * about GNU/POSIX's `--` end-of-options marker (see destructive-rm's own
+ * comment). Applying the same lens to every other rule (disk-write's
+ * cp/tee, container-prune, k8s-delete, iac-apply, publish, dd, find-delete)
+ * found no further instances — each already tolerates argument permutation
+ * by construction, verified empirically per rule, not assumed; see
+ * task-16-report.md's round-5 section for the full coverage list.
  */
 
 // A `harness.config.json`-declared verification command is meant to be a
@@ -180,22 +209,38 @@ export const DANGEROUS_PATTERNS = [
     hard: true,
   },
   // Originally `\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rf]` (plan's own regex,
-  // already correct for short flags). Extended (round 1) to also catch GNU
-  // long-form `--recursive`/`--force`, which are exactly as destructive as
-  // `-r`/`-f` but were not matched at all by the short-flag-only version —
-  // `rm --recursive --force /` sailed straight through undetected. The
-  // repeated prefix group accepts either a short flag (`-[a-zA-Z]*`) or a
-  // long flag (`--[a-zA-Z][a-zA-Z-]*`) followed by whitespace, and the
-  // terminal alternative adds `--recursive`/`--force` alongside the
-  // existing short-flag-ending-in-r-or-f case. The long-flag alternatives
-  // use a negative lookahead `(?![a-zA-Z-])` rather than `\b`, because `\b`
-  // would also hold at the hyphen in "--force-something-fake" (word 'e' to
-  // non-word '-' is a boundary) and wrongly block an unrelated made-up
-  // flag; the lookahead instead demands the flag name actually ends here.
-  // No `[\s\S]*`-shaped gap here (never needed one — `rm`'s own flags are
-  // adjacent to it by construction), so this rule was never vulnerable to
-  // either round-3 Critical; quoting bypasses (`"rm" -rf /`) are handled by
-  // segmentation dequoting the token, not by anything in this regex.
+  // already correct for short flags), extended (round 1) for GNU long-form
+  // `--recursive`/`--force`. Round 5 found this whole *shape* was broken:
+  // the repeated prefix group only ever consumed *flag-shaped* tokens
+  // (`-[a-zA-Z]*` or `--word`), so a single non-flag operand before the
+  // dangerous flag defeated the match entirely — `rm a -rf /`, `rm dir1
+  // dir2 -rf`, `rm foo --force` all walked straight through, because
+  // nothing in the pattern could "skip over" `a`/`dir1 dir2`/`foo` to
+  // reach the flag. GNU coreutils' getopt permutes options after operands
+  // by default — confirmed empirically on both platforms rather than
+  // assumed: BSD `rm <dir> -rf` errors ("No such file or directory") and
+  // leaves the directory alone, but GNU coreutils 9.5 `rm <dir> -rf`
+  // deletes the tree. Linux is where CI and servers run, so this was live
+  // on the primary deployment target; testing only on macOS would have
+  // concluded "not exploitable" and been wrong.
+  //
+  // Detection moved to `hasDangerousRm` (below), a token-based scan: once
+  // an `rm` token is found in a segment, every token *after* it — not just
+  // the immediately-following ones — is checked for a dangerous flag,
+  // stopping at a literal `--` end-of-options marker. `rm -- -rf` is
+  // deliberately *not* blocked: per GNU/POSIX convention, `--` means
+  // everything after it is a filename, not an option, so `rm -- -rf`
+  // deletes (or errors on) a file literally named "-rf" — it does not
+  // recursively force-delete anything, and blocking it would be a pure
+  // false positive with no safety benefit. The dangerous-short-flag check
+  // (`-[a-zA-Z]*[rfRF][a-zA-Z]*`) also adds uppercase `R`/`F`: GNU rm
+  // documents `-r`/`-R` as equivalent recursive aliases (there's no
+  // documented `-F`, but including it costs nothing and matches this
+  // module's standing bias toward over-blocking). This `re` field is kept
+  // for structural consistency with every other entry (see the "every
+  // pattern has a reason key" test) and as a human-readable summary of the
+  // shape this rule targets, but — like `pipe-to-shell` — it is not what
+  // `checkCommand` actually evaluates.
   {
     id: 'destructive-rm',
     re: /\brm\s+(?:(?:-[a-zA-Z]*|--[a-zA-Z][a-zA-Z-]*)\s+)*(?:-[a-zA-Z]*[rf]|--recursive(?![a-zA-Z-])|--force(?![a-zA-Z-]))/,
@@ -275,16 +320,32 @@ export const DANGEROUS_PATTERNS = [
   // clean -fdx" silently failed to match). Round-2 found the same
   // tool/subcommand-adjacency gap as git-push: `git -C /path reset --hard`
   // and `git -C /path clean -fdx` slipped past `\bgit\s+(reset...)`.
-  // Loosened `git` -> subcommand the same way. Deliberately *not* loosened
-  // further inside each alternative (`reset` -> `--hard`, `clean` ->
-  // its flags): those are subcommand-internal option pairs, not
-  // tool-level global flags, and `git reset --hard` / `git clean -f...`
-  // are always written adjacently in practice. Also added `--force` as a
-  // long-form alternative to `clean`'s short flags (`git clean --force`
-  // is valid GNU-style long-form and wasn't matched by
-  // `-[a-zA-Z]*[fd]`), the same long-form gap already fixed for
-  // destructive-rm in round 1 — found while re-touching this rule, not
-  // part of the review's 16 leaks, but the identical bug class.
+  // Loosened `git` -> subcommand the same way, on the stated (round-2)
+  // assumption that `reset -> --hard` and `clean -> its flags` didn't need
+  // the same loosening, since they're "subcommand-internal option pairs
+  // ... always written adjacently in practice."
+  //
+  // Round 5 tested that assumption instead of continuing to trust it — the
+  // same lens the coordinator applied to `rm` — and found it false, with a
+  // real git repo, not just reasoning: `git reset HEAD~1 --hard` (commit-
+  // ish before the flag) and `git reset --quiet --hard HEAD~1` (another
+  // flag before `--hard`) both perform a real hard reset; `git clean
+  // untracked.txt -f` and `git clean dirA -fd` (a pathspec before the
+  // flags) both really delete. None of these matched `reset\s+--hard\b` or
+  // `clean\s+(?:...)`, which required the flag *immediately* after the
+  // subcommand word with nothing but literal whitespace in between — the
+  // exact same structural bug as destructive-rm's, just one level up.
+  //
+  // Detection for the `reset`/`clean` sub-cases moved to `hasGitDestructive`
+  // (below): once `reset` or `clean` is found as a token in a segment that
+  // also contains `git`, every token after it is checked for the relevant
+  // dangerous flag (stopping at a literal `--`, same reasoning as
+  // destructive-rm — `git reset -- --hard` would pass `--hard` as a
+  // revision/pathspec, not a flag). `filter-branch` needed no such change:
+  // it was never a "flag after subcommand" check, just "does the bare
+  // subcommand name appear at all" — already tolerant of any argument
+  // order via the free-form gap, same as k8s-delete/container-prune below.
+  // This `re` field is documentation-only, like destructive-rm's above.
   {
     id: 'git-destructive',
     re: /\bgit\b[\s\S]*\b(reset\s+--hard\b|clean\s+(?:-[a-zA-Z]*[fd]|--force(?![a-zA-Z-]))|filter-branch\b)/,
@@ -525,6 +586,91 @@ function hasPipeToShell(segments) {
   return false;
 }
 
+// A short `rm` flag token is dangerous if it contains `r`, `f`, `R`, or `F`
+// anywhere among its letters — GNU rm documents `-r`/`-R` as equivalent
+// recursive aliases (checked; `-F` has no documented meaning, included
+// only for symmetry, consistent with this module's bias toward
+// over-blocking rather than precision). Matches a combined flag like
+// `-vrf` or `-Rv` regardless of where the dangerous letter falls, not just
+// at the end.
+const DANGEROUS_SHORT_RM_FLAG = /^-[a-zA-Z]*[rfRF][a-zA-Z]*$/;
+
+// Token-based, not regex-over-the-whole-segment, specifically so a
+// non-flag operand before the dangerous flag can't defeat it (round 5 —
+// see destructive-rm's comment above for the full story: GNU getopt
+// permutes options after operands, so `rm a -rf /` is exactly as
+// dangerous as `rm -rf a /`, and only testing on a platform whose `rm`
+// doesn't permute would miss this). Once an `rm` token is found, every
+// *following* token in the same segment is checked, not just the
+// immediately-adjacent ones — until a literal `--` end-of-options marker,
+// after which nothing is treated as a flag (see destructive-rm's comment
+// for why `rm -- -rf` is deliberately not blocked).
+function hasDangerousRm(segments) {
+  for (const seg of segments) {
+    const tokens = seg.text.split(/\s+/).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] !== 'rm') continue;
+      for (let j = i + 1; j < tokens.length; j++) {
+        const tok = tokens[j];
+        if (tok === '--') break;
+        if (tok === '--recursive' || tok === '--force') return true;
+        if (DANGEROUS_SHORT_RM_FLAG.test(tok)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Scans `tokens` strictly after `fromIdx` for one that satisfies
+// `predicate`, stopping at a literal `--` end-of-options marker (see
+// hasDangerousRm's comment — the same GNU/POSIX convention applies to
+// git's own subcommands: content after `--` is a revision/pathspec, not a
+// flag). Shared by both of hasGitDestructive's flag-position-dependent
+// checks below.
+function hasFlagAfter(tokens, fromIdx, predicate) {
+  for (let i = fromIdx + 1; i < tokens.length; i++) {
+    if (tokens[i] === '--') break;
+    if (predicate(tokens[i])) return true;
+  }
+  return false;
+}
+
+// Token-based for the same reason as hasDangerousRm — round 5 confirmed
+// (against a real git repo, not just reasoning) that `git reset HEAD~1
+// --hard` (a revision before the flag) and `git clean untracked.txt -f` (a
+// pathspec before the flag) both perform the real destructive action, and
+// neither matched the old `reset\s+--hard\b`/`clean\s+(?:...)` regex,
+// which required the flag *immediately* after the subcommand word. Once
+// `git` and (`reset` or `clean`) are both found as tokens in a segment,
+// every token after the subcommand word is checked for the relevant
+// dangerous flag, not just the one immediately following it.
+// `filter-branch` needs no such handling: it was never a flag-position
+// check, just "does the bare subcommand name appear at all" (see its
+// entry's comment above).
+function hasGitDestructive(segments) {
+  for (const seg of segments) {
+    const tokens = seg.text.split(/\s+/).filter(Boolean);
+    if (!tokens.includes('git')) continue;
+    if (tokens.includes('filter-branch')) return true;
+    const resetIdx = tokens.indexOf('reset');
+    if (resetIdx !== -1 && hasFlagAfter(tokens, resetIdx, (t) => t === '--hard')) return true;
+    const cleanIdx = tokens.indexOf('clean');
+    if (
+      cleanIdx !== -1
+      && hasFlagAfter(tokens, cleanIdx, (t) => t === '--force' || /^-[a-zA-Z]*[fd][a-zA-Z]*$/.test(t))
+    ) return true;
+  }
+  return false;
+}
+
+// Rule ids whose real detection logic is one of the functions above rather
+// than `p.re.test(segment.text)` — see checkCommand's matching loop.
+const DEDICATED_MATCHERS = {
+  'destructive-rm': hasDangerousRm,
+  'git-destructive': hasGitDestructive,
+  'pipe-to-shell': hasPipeToShell,
+};
+
 /**
  * Resolve any patternId `checkCommand` can ever return — including the
  * `'empty'`, `'too-long'`, and `'unterminated-quote'` sentinels, none of
@@ -623,11 +769,15 @@ export function checkCommand(cmd, allowPatterns = []) {
 
   let hit = null;
   for (const p of DANGEROUS_PATTERNS) {
-    if (p.id === 'pipe-to-shell') {
-      if (hasPipeToShell(segments)) { hit = p; break; }
-      continue;
-    }
-    if (segments.some((seg) => p.re.test(seg.text))) { hit = p; break; }
+    // Three rules need cross-token or cross-segment reasoning a single
+    // regex-over-one-segment can't express (see each function's own
+    // comment for why); every other rule is still a plain per-segment
+    // regex test. Each of the three still carries a documentation-only
+    // `re` field for structural consistency (see e.g. destructive-rm's
+    // comment above).
+    const matcher = DEDICATED_MATCHERS[p.id];
+    const matched = matcher ? matcher(segments) : segments.some((seg) => p.re.test(seg.text));
+    if (matched) { hit = p; break; }
   }
   if (!hit) return { blocked: false, patternId: null, overriddenBy: null };
 
