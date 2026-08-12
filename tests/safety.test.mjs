@@ -782,6 +782,120 @@ test('round 5: token-scan quadratic check -- many "rm"/"git reset" tokens with n
   }
 });
 
+// --- round 6, Critical A: round 5's token scanners compared a token to a
+// bare tool name with `===`, so a path-prefixed invocation -- completely
+// ordinary, not obfuscation -- never matched. Every regex-based rule was
+// already immune (`\b` treats `/` as a non-word character); this was
+// specific to the two rules round 5 moved to token-equality matching.
+const ROUND6_PATH_PREFIX_MUST_BLOCK = [
+  ['/bin/rm -rf /', 'destructive-rm'],
+  ['./rm -rf /', 'destructive-rm'],
+  ['../bin/rm -rf /', 'destructive-rm'],
+  ['/usr/bin/git reset --hard HEAD~1', 'git-destructive'],
+  ['/usr/bin/git clean -f', 'git-destructive'],
+];
+
+test('round 6 Critical A: a path prefix on rm/git no longer defeats the token-scanner rules', () => {
+  for (const [cmd, id] of ROUND6_PATH_PREFIX_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, id, `wrong pattern for: ${cmd}`);
+  }
+});
+
+test('round 6 Critical A: the regex-based rules were already immune to path prefixes -- re-confirmed, not just assumed', () => {
+  assert.equal(checkCommand('/usr/bin/git push origin main').patternId, 'git-push');
+  assert.equal(checkCommand('/usr/local/bin/kubectl delete pod x').patternId, 'k8s-delete');
+  assert.equal(checkCommand('/bin/dd if=/dev/zero of=/dev/sda').patternId, 'disk-write');
+  assert.equal(checkCommand('/usr/bin/find / -delete').patternId, 'find-delete');
+  assert.equal(checkCommand('/bin/cp /dev/sda backup.img').patternId, 'disk-write');
+});
+
+test('round 6 Critical A: basename comparison does not start matching a differently-named tool that merely contains the name', () => {
+  // The false-positive boundary the fix must not cross: exact basename
+  // equality, not a substring/prefix match.
+  assert.equal(checkCommand('my-rm-wrapper -rf /').blocked, false);
+  assert.equal(checkCommand('./scripts/rm-old-logs.sh').blocked, false);
+  assert.equal(checkCommand('rm2 -rf /').blocked, false);
+  assert.equal(checkCommand('grm -rf /').blocked, false);
+});
+
+// --- round 6, Critical B: sh -c / bash -lc / eval hand a whole new
+// command line to a shell as a single (whitespace-fused) argument -- no
+// rule in this file could ever see inside it. Decision: block the
+// structural pattern outright (soft rule) rather than recursively
+// extract and re-check the payload -- see hasShellIndirection's comment
+// and task-16-report.md's round-6 section for the full reasoning.
+const ROUND6_SHELL_INDIRECTION_MUST_BLOCK = [
+  'sh -c "rm -rf /"',
+  'bash -c "git push"',
+  'bash -lc "rm -rf /"',
+  'zsh -c "rm -rf /"',
+  'eval "rm -rf /"',
+  "sh -c 'find / -delete'",
+];
+
+test('round 6 Critical B: shell indirection (sh -c / bash -lc / eval) is now blocked, regardless of payload content', () => {
+  for (const cmd of ROUND6_SHELL_INDIRECTION_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, 'shell-indirection', `wrong pattern for: ${cmd}`);
+  }
+});
+
+test('round 6 Critical B: shell-indirection is soft -- --allow remains the escape hatch for a reviewed payload', () => {
+  assert.equal(isHardRule('shell-indirection'), false);
+  const r = checkCommand('sh -c "npm test"', [/^sh -c "npm test"$/]);
+  assert.equal(r.blocked, false);
+  assert.equal(r.overriddenBy, 'shell-indirection');
+});
+
+test('round 6 Critical B: shell-indirection does not false-positive on running a script file (no -c/eval present)', () => {
+  assert.equal(checkCommand('sh script.sh arg1 arg2').blocked, false);
+  assert.equal(checkCommand('bash setup.sh').blocked, false);
+  assert.equal(checkCommand('./init.sh').blocked, false);
+  assert.equal(checkCommand('sh --help').blocked, false);
+  // running a script whose own arguments happen to include something
+  // -c-shaped must not attribute that flag to sh itself -- once sh sees a
+  // non-option token (the script path), everything after belongs to the
+  // script, not to sh.
+  assert.equal(checkCommand('sh script.sh -c fake-payload').blocked, false);
+});
+
+test('round 6: verified-clean-this-pass items re-pinned (whitespace, prefix commands, sudo -u, and the two-command newline case)', () => {
+  assert.equal(checkCommand('  rm -rf /').patternId, 'destructive-rm'); // leading whitespace
+  assert.equal(checkCommand('nohup npm test').blocked, false);
+  assert.equal(checkCommand('time go test ./...').blocked, false);
+  assert.equal(checkCommand('env FOO=1 npm test').blocked, false);
+  assert.equal(checkCommand('xargs echo hello').blocked, false);
+  assert.equal(checkCommand('command ls').blocked, false);
+  assert.equal(checkCommand('sudo -u root ls').patternId, 'sudo');
+  // git<newline>push (no backslash): a REAL, un-escaped newline is a real
+  // shell statement separator (bash runs two independent commands), so
+  // this must stay unblocked -- distinct from round 4's `git \<newline>
+  // push` (backslash-escaped, a real continuation, correctly blocked).
+  assert.equal(checkCommand('git\npush').blocked, false);
+});
+
+test('round 6: worst-case timing under the length cap after adding basename lookups and shell-indirection scanning', () => {
+  const budgetMs = 100;
+  const cases = [
+    // path-prefix + operand-permutation combined, packed toward the cap
+    () => '/bin/rm '.repeat(256) + 'x',
+    // many shell-name occurrences, -c never resolving
+    () => 'sh -x '.repeat(341) + 'x',
+    // restart-point shape, re-measured after this round's changes
+    () => 'git '.repeat(512) + 'x',
+  ];
+  for (const build of cases) {
+    const cmd = build().slice(0, 2048);
+    const start = Date.now();
+    checkCommand(cmd);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 30))}... (len ${cmd.length})`);
+  }
+});
+
 test('round 2: [^;&|]* rules still stop at a shell separator, so piped/chained commands are not blocked', () => {
   assert.equal(checkCommand('git status | grep push').blocked, false);
   assert.equal(checkCommand('echo hello && git status').blocked, false);

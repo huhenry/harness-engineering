@@ -168,6 +168,7 @@ export const MESSAGES = {
     'safety.iac-apply': 'This applies or destroys real infrastructure (`terraform apply`/`destroy`, `helm upgrade`/`delete`/`uninstall`), changing or tearing down systems other people are running right now. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
     'safety.publish': 'This publishes a package or release to a public registry, and there is no unpublishing your way out once someone has already installed it. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
     'safety.pipe-to-shell': 'This pipes a remote download straight into a shell, so whatever that URL happens to serve at this exact moment runs unread. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.shell-indirection': 'This hands a whole new command line to a shell as a single argument (`sh -c`, `bash -lc`, `eval`, ...), so nothing inside it can be checked by any rule here — this module chose not to look, not that it knows the payload is safe. Override with `--allow` and a pattern matching only this command, once you have actually read the payload yourself and are sure it is safe.',
     'safety.deploy-words': 'This rule is deliberately broad: it fires on the bare words "deploy", "prod", "production", or "release" appearing anywhere in the command, including harmless false positives like a script called `release.sh`. That is intentional — missing a real deployment is worse than one extra confirmation. Override with `--allow` and a pattern matching only this command, once you have confirmed it is safe.',
     'safety.empty': 'The command string is empty or whitespace-only, so there is nothing to run — this points at a broken or missing declaration, not a real command. Fix whatever produced the empty string; there is no dangerous pattern here for `--allow` to override.',
 
@@ -350,6 +351,7 @@ export const MESSAGES = {
     'safety.iac-apply': '这条命令会应用或销毁真实的基础设施（`terraform apply`/`destroy`、`helm upgrade`/`delete`/`uninstall`），改动或拆掉的是别人正在用的系统。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.publish': '这条命令会把包或发行版发布到公共仓库——一旦有人装上了，你就没法把它撤回来。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.pipe-to-shell': '这条命令把远程下载的内容直接接进 shell 执行——这一刻那个 URL 吐出来的是什么，就原样跑什么，你根本没机会先看一眼。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.shell-indirection': '这条命令把一整条新命令当成单个参数交给了 shell（`sh -c`、`bash -lc`、`eval` 等等），里面到底是什么，这里的任何规则都看不进去——不是这个模块判断内容安全，而是它压根没去看。如果你已经亲自看过这个参数、确认它安全，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.deploy-words': '这条规则是故意写宽的：只要命令里出现"deploy"、"prod"、"production"或"release"这几个词就会触发，哪怕只是脚本名叫 `release.sh` 这种无害的误伤也一样。这是有意为之——漏掉一次真正的部署，比多按一次确认的代价大得多。等你确认这条命令确实安全，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.empty': '命令字符串是空的或者只有空白，根本没有东西可执行——这说明声明本身写错了或者漏了，不是一条真正的命令。去修正生成这个空字符串的地方；这里没有危险模式，`--allow` 也没有什么可放行的。',
 

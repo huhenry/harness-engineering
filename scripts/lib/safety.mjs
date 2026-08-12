@@ -156,6 +156,41 @@
  * found no further instances — each already tolerates argument permutation
  * by construction, verified empirically per rule, not assumed; see
  * task-16-report.md's round-5 section for the full coverage list.
+ *
+ * Sixth adversarial review round (fix base b32a939) found two more,
+ * neither a variation on round 5's:
+ *
+ *   A. Round 5's token scanners (`hasDangerousRm`, `hasGitDestructive`)
+ *      compare a token to a bare tool name with `===` — `'/bin/rm' ===
+ *      'rm'` is false, so a path-prefixed invocation, which is completely
+ *      ordinary (`/bin/rm -rf /`, `./rm -rf /`, `/usr/bin/git reset
+ *      --hard`), walked straight through both. Every *regex*-based rule
+ *      was already immune to this, for free: `\b` treats `/` as a
+ *      non-word character, so `\bdd\b`, `\bfind\b`, `\b(cp|tee)\b` etc.
+ *      all matched a path-prefixed token correctly without any special
+ *      handling. This gap was specific to the two rules round 5 moved off
+ *      regex matching entirely. Fixed with `basename` (below): compare a
+ *      token's *last path component* to the tool name, still with exact
+ *      equality (not a substring match), so a differently-named tool that
+ *      merely contains the tool name — `my-rm-wrapper`, `./scripts/
+ *      rm-old-logs.sh` — does not start matching.
+ *   B. `sh -c "..."`, `bash -lc "..."`, `eval "..."` hand a whole new
+ *      command line to a shell interpreter as a single argument, and
+ *      nothing inside that argument was ever visible to any rule — it's
+ *      just one opaque, whitespace-fused token to every scanner in this
+ *      file. `sh -c "rm -rf /"`, `bash -c "git push"`, `eval "rm -rf /"`
+ *      all walked straight through, undetected by every rule simultaneously
+ *      (not a single rule's bug — a category no rule was designed to see
+ *      into at all). Deliberately fixed by blocking the *pattern* itself
+ *      (`hasShellIndirection`, below) rather than recursively extracting
+ *      and re-checking the payload — see that function's comment for the
+ *      full reasoning; in short, recursive checking needs a second,
+ *      non-whitespace-fusing tokenizer (reusing the existing fused
+ *      `segment.text` would corrupt the payload's own internal structure)
+ *      plus a carefully bounded recursion depth, real complexity in
+ *      exactly the place five rounds of review have shown new complexity
+ *      tends to hide the next bug. This is a *soft* rule — `--allow`
+ *      remains the escape hatch for a payload a human has actually read.
  */
 
 // A `harness.config.json`-declared verification command is meant to be a
@@ -423,6 +458,23 @@ export const DANGEROUS_PATTERNS = [
     reasonKey: 'safety.pipe-to-shell',
     hard: false,
   },
+  // Round 6, Critical B — see `hasShellIndirection`'s comment (below the
+  // array) for the full design writeup and why this blocks the *pattern*
+  // outright rather than recursively inspecting the payload. Soft, not
+  // hard: unlike sudo/destructive-rm/find-delete/disk-write, this rule
+  // isn't asserting the payload *is* dangerous — only that this module
+  // chose not to look, so a human who has actually read the payload can
+  // vouch for it via `--allow` the same way they would for any other
+  // over-broad rule. This `re` field is documentation-only, like
+  // destructive-rm's and git-destructive's above — real detection is
+  // `hasShellIndirection`, which needs to reason about flag tokens
+  // (`-c`, `-lc`) and `eval` specifically, not a substring pattern.
+  {
+    id: 'shell-indirection',
+    re: /\b(sh|bash|zsh|dash|ksh)\b[\s\S]*-[a-zA-Z]*c[a-zA-Z]*\b|\beval\b/,
+    reasonKey: 'safety.shell-indirection',
+    hard: false,
+  },
   // Deliberately the broadest rule in the list — see reasonKey text for the
   // full rationale (brief section D requires this to be stated explicitly
   // to the user, not just implied by the code). Kept last so a command that
@@ -595,21 +647,44 @@ function hasPipeToShell(segments) {
 // at the end.
 const DANGEROUS_SHORT_RM_FLAG = /^-[a-zA-Z]*[rfRF][a-zA-Z]*$/;
 
+// Round 6: the token scanners below compare a token to a literal tool name
+// (`'rm'`, `'git'`) with `===`, which broke on `/bin/rm`, `./rm`,
+// `../bin/rm`, `/usr/bin/git reset --hard`, etc. — a path-prefixed
+// invocation, which is completely ordinary, never equals the bare name.
+// (Every *regex*-based rule in this file was already immune to this: `\b`
+// treats `/` as a non-word character, so `\bdd\b`, `\bfind\b`, `\b(cp|
+// tee)\b` etc. all matched a path prefix correctly without any special
+// handling — this is specific to the token-equality rules introduced in
+// round 5.) `basename` extracts the last path component so the comparison
+// is against *that*, not the whole token. This is an exact-equality
+// comparison on the extracted basename, not a substring/prefix match —
+// deliberately, so a differently-named tool that merely *contains* the
+// tool name doesn't start matching: `my-rm-wrapper` has basename
+// `my-rm-wrapper` (not `rm`), `./scripts/rm-old-logs.sh` has basename
+// `rm-old-logs.sh` (not `rm`), both correctly excluded. No extension
+// stripping (e.g. `rm.exe`) — this module models POSIX/bash shell
+// semantics, not Windows, consistent with its scope everywhere else.
+function basename(token) {
+  const idx = token.lastIndexOf('/');
+  return idx === -1 ? token : token.slice(idx + 1);
+}
+
 // Token-based, not regex-over-the-whole-segment, specifically so a
 // non-flag operand before the dangerous flag can't defeat it (round 5 —
 // see destructive-rm's comment above for the full story: GNU getopt
 // permutes options after operands, so `rm a -rf /` is exactly as
 // dangerous as `rm -rf a /`, and only testing on a platform whose `rm`
-// doesn't permute would miss this). Once an `rm` token is found, every
-// *following* token in the same segment is checked, not just the
-// immediately-adjacent ones — until a literal `--` end-of-options marker,
-// after which nothing is treated as a flag (see destructive-rm's comment
-// for why `rm -- -rf` is deliberately not blocked).
+// doesn't permute would miss this). Once an `rm` token is found (by
+// basename — see round 6 above), every *following* token in the same
+// segment is checked, not just the immediately-adjacent ones — until a
+// literal `--` end-of-options marker, after which nothing is treated as a
+// flag (see destructive-rm's comment for why `rm -- -rf` is deliberately
+// not blocked).
 function hasDangerousRm(segments) {
   for (const seg of segments) {
     const tokens = seg.text.split(/\s+/).filter(Boolean);
     for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i] !== 'rm') continue;
+      if (basename(tokens[i]) !== 'rm') continue;
       for (let j = i + 1; j < tokens.length; j++) {
         const tok = tokens[j];
         if (tok === '--') break;
@@ -641,16 +716,20 @@ function hasFlagAfter(tokens, fromIdx, predicate) {
 // pathspec before the flag) both perform the real destructive action, and
 // neither matched the old `reset\s+--hard\b`/`clean\s+(?:...)` regex,
 // which required the flag *immediately* after the subcommand word. Once
-// `git` and (`reset` or `clean`) are both found as tokens in a segment,
+// `git` (by basename — round 6, see above: `/usr/bin/git reset --hard`
+// wasn't found by `tokens.includes('git')` either, same root cause as
+// `rm`) and (`reset` or `clean`) are both found as tokens in a segment,
 // every token after the subcommand word is checked for the relevant
 // dangerous flag, not just the one immediately following it.
 // `filter-branch` needs no such handling: it was never a flag-position
 // check, just "does the bare subcommand name appear at all" (see its
-// entry's comment above).
+// entry's comment above) — `reset`/`clean` themselves also don't need
+// basename treatment, since they're subcommand *words*, never invoked via
+// a path the way the `git` binary itself can be.
 function hasGitDestructive(segments) {
   for (const seg of segments) {
     const tokens = seg.text.split(/\s+/).filter(Boolean);
-    if (!tokens.includes('git')) continue;
+    if (!tokens.some((t) => basename(t) === 'git')) continue;
     if (tokens.includes('filter-branch')) return true;
     const resetIdx = tokens.indexOf('reset');
     if (resetIdx !== -1 && hasFlagAfter(tokens, resetIdx, (t) => t === '--hard')) return true;
@@ -663,12 +742,67 @@ function hasGitDestructive(segments) {
   return false;
 }
 
+// Round 6, Critical B: `sh -c "rm -rf /"`, `bash -lc "..."`, `eval "..."`
+// hand a whole new command line to a shell interpreter as a single
+// argument — nothing inside that argument is ever visible to any rule
+// above, since it's just one opaque (whitespace-fused, per
+// splitIntoCanonicalSegments) token to this scanner.
+//
+// Two designs were considered (see task-16-report.md's round-6 section
+// for the full writeup): (1) recursively extract the payload and check it
+// as a command in its own right, or (2) treat the *structural pattern* of
+// "-c"/`eval` itself as unreviewable and block it outright, regardless of
+// payload content. Went with (2). Recursive checking would need a second,
+// non-fusing tokenizer (the existing fused `segment.text` can't be reused
+// — round 3's whitespace-fusion, which a recursive check would need to
+// *undo* for the payload specifically, is exactly what protects against
+// the Important-class false positive elsewhere), correct handling of
+// `eval`'s multi-argument-joining semantics, a decision about `-c` vs. a
+// positional script-file argument, and a carefully bounded recursion
+// depth/budget to avoid `sh -c "sh -c \"sh -c ...\""` becoming a new DoS
+// vector — meaningful complexity in exactly the place five rounds of
+// review have already shown new complexity tends to hide the next bug.
+// Blocking outright is a strictly smaller, more auditable change, keeps
+// `--allow` as the escape hatch for a legitimately-reviewed payload (this
+// is a *soft* rule — see its DANGEROUS_PATTERNS entry), and the
+// coordinator offered it as an equally defensible option.
+//
+// Detection: a recognized shell name (`sh`/`bash`/`zsh`/`dash`/`ksh`,
+// matching pipe-to-shell's existing shell-name set) by basename, followed
+// by a short-flag token containing `c` (bare `-c`, or combined like
+// `-lc`/`-cl`) before any non-flag token or `--`; or a bare `eval` token
+// by basename, unconditionally (eval's very first argument is always
+// interpreted as a command). Scanning a shell invocation's arguments stops
+// at the first non-flag token: `sh script.sh -c fake` (running a *file*,
+// with `-c` appearing later as one of the *script's own* arguments, not
+// sh's) must not match — once sh sees a non-option argument, everything
+// after it belongs to the script being run, not to sh itself.
+function hasShellIndirection(segments) {
+  const shellNames = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+  for (const seg of segments) {
+    const tokens = seg.text.split(/\s+/).filter(Boolean);
+    for (let i = 0; i < tokens.length; i++) {
+      const base = basename(tokens[i]);
+      if (base === 'eval') return true;
+      if (!shellNames.has(base)) continue;
+      for (let j = i + 1; j < tokens.length; j++) {
+        const tok = tokens[j];
+        if (tok === '--') break;
+        if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(tok)) return true;
+        if (!tok.startsWith('-')) break;
+      }
+    }
+  }
+  return false;
+}
+
 // Rule ids whose real detection logic is one of the functions above rather
 // than `p.re.test(segment.text)` — see checkCommand's matching loop.
 const DEDICATED_MATCHERS = {
   'destructive-rm': hasDangerousRm,
   'git-destructive': hasGitDestructive,
   'pipe-to-shell': hasPipeToShell,
+  'shell-indirection': hasShellIndirection,
 };
 
 /**
