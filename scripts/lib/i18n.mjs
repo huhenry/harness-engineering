@@ -145,6 +145,29 @@ export const MESSAGES = {
     'gap.feedback.no-observability.why': 'Without observability, failures in the running system stay invisible until a user reports them, and debugging starts from zero every time.',
     'gap.feedback.no-observability.fix': "Add basic structured logging (and metrics or tracing where applicable) to the system's critical paths.",
 
+    // --- safety: dangerous-command blocklist reason texts (task 16) ---
+    // Each is a self-contained sentence: what the command does, why that's
+    // dangerous, and what the user can do about it — mirroring the
+    // evidence.reason.* convention above rather than splitting into
+    // separate title/why/fix keys, since safety.mjs's DANGEROUS_PATTERNS
+    // has a single `reasonKey` per rule, not the gap catalogue's three.
+    // Hard rules (sudo, destructive-rm, disk-write) state plainly that
+    // --allow cannot override them; every other rule ends with the
+    // override instruction instead.
+    'safety.sudo': 'This runs with `sudo` — once a command escalates to root, none of the checks a normal user would trip on are still in effect. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
+    'safety.destructive-rm': 'This deletes files recursively and/or without confirmation (`-r`, `-f`, `--recursive`, or `--force` on `rm`), and there is no undo once the wrong path gets caught in it. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
+    'safety.disk-write': 'This writes straight to a raw disk device or overwrites a system authentication file (`mkfs`, `dd if=`, or a redirect into /dev/sd*, /dev/nvme*, /dev/disk*, /etc/passwd, /etc/shadow, or /etc/sudoers) — enough to destroy every file on the machine or lock every account out of it. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
+    'safety.power': 'This shuts down, reboots, or halts the machine, taking the process running `verify --run` down with it along with everything else on the same host. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.git-push': 'This pushes to a remote and can move or overwrite a branch other people are already relying on. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.git-destructive': 'This throws away local commits or untracked files for good (`git reset --hard`, `git clean -f...`, or `git filter-branch`) — there is no reflog for what `clean` removes. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.container-prune': 'This removes Docker containers, images, or volumes in bulk, and any data that lived only in a deleted volume goes with it. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.k8s-delete': 'This deletes a live Kubernetes resource, which can take a running service down. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.iac-apply': 'This applies or destroys real infrastructure (`terraform apply`/`destroy`, `helm upgrade`/`delete`/`uninstall`), changing or tearing down systems other people are running right now. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.publish': 'This publishes a package or release to a public registry, and there is no unpublishing your way out once someone has already installed it. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.pipe-to-shell': 'This pipes a remote download straight into a shell, so whatever that URL happens to serve at this exact moment runs unread. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
+    'safety.deploy-words': 'This rule is deliberately broad: it fires on the bare words "deploy", "prod", "production", or "release" appearing anywhere in the command, including harmless false positives like a script called `release.sh`. That is intentional — missing a real deployment is worse than one extra confirmation. Override with `--allow` and a pattern matching only this command, once you have confirmed it is safe.',
+    'safety.empty': 'The command string is empty or whitespace-only, so there is nothing to run — this points at a broken or missing declaration, not a real command. Fix whatever produced the empty string; there is no dangerous pattern here for `--allow` to override.',
+
     // --- gap catalogue: loop ---
     'gap.loop.none.title': 'No agentic loop defined',
     'gap.loop.none.why': "Without a defined loop pattern, agent sessions run ad hoc — there's no structure for how work gets proposed, checked or repeated.",
@@ -303,6 +326,26 @@ export const MESSAGES = {
     'gap.feedback.no-observability.title': '缺少可观测性',
     'gap.feedback.no-observability.why': '没有可观测性时，线上系统出问题会一直不被察觉，直到用户反馈，排查也每次都得从零开始。',
     'gap.feedback.no-observability.fix': '在系统的核心路径上加基础的结构化日志（以及适用场景下的指标和链路追踪）。',
+
+    // --- 安全：危险命令阻断清单文案（task 16）---
+    // 每条都是一句自洽的话：这条命令做什么、为什么危险、用户能做什么——沿用上面
+    // evidence.reason.* 的写法，而不是拆成 gap 目录那种 title/why/fix 三段式，
+    // 因为 safety.mjs 的 DANGEROUS_PATTERNS 每条规则只有一个 reasonKey。硬规则
+    // （sudo、destructive-rm、disk-write）明确说明 --allow 覆盖不了；其余规则
+    // 结尾都给出放行方式。
+    'safety.sudo': '这条命令带 `sudo` 执行——一旦提权到 root，普通用户会被拦下的检查在这里全部失效。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
+    'safety.destructive-rm': '这条命令会递归删除文件和/或跳过确认（`rm` 带 `-r`、`-f`、`--recursive` 或 `--force`），一旦路径写错就没有撤销可言。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
+    'safety.disk-write': '这条命令直接写裸磁盘设备，或覆盖系统鉴权文件（`mkfs`、`dd if=`，或者重定向写入 /dev/sd*、/dev/nvme*、/dev/disk*、/etc/passwd、/etc/shadow、/etc/sudoers），足以毁掉整台机器上的所有文件，或者把所有账号都锁在门外。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
+    'safety.power': '这条命令会关机、重启或挂起整台机器，跑着 `verify --run` 的这个进程和同一台机器上的其他东西会一起被带走。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.git-push': '这条命令会推送到远程仓库，可能移动或覆盖别人正依赖的分支。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.git-destructive': '这条命令会永久丢弃本地提交或未跟踪文件（`git reset --hard`、`git clean -f...` 或 `git filter-branch`）——`clean` 删掉的东西连 reflog 都找不回来。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.container-prune': '这条命令会批量删除 Docker 容器、镜像或卷，只存在于某个卷里的数据会跟着一起没了。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.k8s-delete': '这条命令会删除一个正在运行的 Kubernetes 资源，可能导致线上服务直接下线。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.iac-apply': '这条命令会应用或销毁真实的基础设施（`terraform apply`/`destroy`、`helm upgrade`/`delete`/`uninstall`），改动或拆掉的是别人正在用的系统。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.publish': '这条命令会把包或发行版发布到公共仓库——一旦有人装上了，你就没法把它撤回来。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.pipe-to-shell': '这条命令把远程下载的内容直接接进 shell 执行——这一刻那个 URL 吐出来的是什么，就原样跑什么，你根本没机会先看一眼。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.deploy-words': '这条规则是故意写宽的：只要命令里出现"deploy"、"prod"、"production"或"release"这几个词就会触发，哪怕只是脚本名叫 `release.sh` 这种无害的误伤也一样。这是有意为之——漏掉一次真正的部署，比多按一次确认的代价大得多。等你确认这条命令确实安全，用 `--allow` 加一条只匹配它的正则放行。',
+    'safety.empty': '命令字符串是空的或者只有空白，根本没有东西可执行——这说明声明本身写错了或者漏了，不是一条真正的命令。去修正生成这个空字符串的地方；这里没有危险模式，`--allow` 也没有什么可放行的。',
 
     // --- gap 目录：loop ---
     'gap.loop.none.title': '未定义 agent 循环模式',
