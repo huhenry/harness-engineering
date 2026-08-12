@@ -36,7 +36,11 @@ test('report matches the documented schema shape', () => {
   assert.equal(r.generatedAt, NOW.toISOString());
   assert.deepEqual(r.stack, ['go']);
   assert.deepEqual(r.score, { total: 17, max: 24 });
-  assert.deepEqual(r.evidence, { verified: false, verifiedAt: null });
+  // task-15 extends the evidence object with `reason` (null when a valid
+  // reason wasn't supplied to this low-level buildReport call — the actual
+  // "why" invariant is enforced by assess.mjs's runAssess, not by
+  // buildReport itself, which just carries whatever the caller passed).
+  assert.deepEqual(r.evidence, { verified: false, verifiedAt: null, reason: null });
 });
 
 test('subsystems appear in canonical order with max 4', () => {

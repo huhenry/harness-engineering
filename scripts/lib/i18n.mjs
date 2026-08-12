@@ -22,6 +22,14 @@ export const MESSAGES = {
     'report.colStatus': 'Status',
     'report.why': 'Why: {text}',
     'report.fix': 'Fix: {text}',
+    'report.evidenceNote': 'Evidence: {text}',
+
+    // --- evidence freshness reasons ---
+    'evidence.reason.missing': 'No verify evidence found — run `verify --run` to generate `.harness/verify-report.json`.',
+    'evidence.reason.schemaMismatch': 'The verify report has an unsupported schema version and was ignored.',
+    'evidence.reason.invalidTimestamp': 'The verify report has an invalid or future-dated timestamp and was ignored.',
+    'evidence.reason.stale': 'The verify report is older than 24 hours and was ignored — run `verify --run` again for fresh evidence.',
+    'evidence.reason.failed': 'The verify report is fresh and valid, but the run did not pass, so it does not count as evidence — get it green first.',
 
     // --- maturity levels ---
     'level.0': 'Ad-hoc',
@@ -173,6 +181,14 @@ export const MESSAGES = {
     'report.colStatus': '状态',
     'report.why': '原因：{text}',
     'report.fix': '修复建议：{text}',
+    'report.evidenceNote': '证据说明：{text}',
+
+    // --- 证据新鲜度原因 ---
+    'evidence.reason.missing': '未找到验证证据——跑一遍 `verify --run` 生成 `.harness/verify-report.json`。',
+    'evidence.reason.schemaMismatch': '验证报告的 schema 版本不受支持，已忽略。',
+    'evidence.reason.invalidTimestamp': '验证报告的时间戳无效或晚于当前时间，已忽略。',
+    'evidence.reason.stale': '验证报告已超过 24 小时，已忽略——重新跑一遍 `verify --run` 获取新证据。',
+    'evidence.reason.failed': '验证报告是新鲜且合法的，但本次运行没有通过，因此不算作证据——先跑绿再说。',
 
     // --- 成熟度等级 ---
     'level.0': '无序',

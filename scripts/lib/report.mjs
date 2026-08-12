@@ -23,7 +23,9 @@ export const SCHEMA_VERSION = 1;
  * determinism contract this module must uphold is narrower: same `lang` +
  * same inputs => byte-identical JSON, every time.
  */
-export function buildReport({ repo, stack, results, hasEvidence, verifiedAt, toolVersion, now, lang }) {
+export function buildReport({
+  repo, stack, results, hasEvidence, evidenceReason = null, verifiedAt, toolVersion, now, lang,
+}) {
   const scores = Object.fromEntries(SUBSYSTEMS.map((id) => [id, results[id].score]));
 
   const subsystems = SUBSYSTEMS.map((id) => {
@@ -65,7 +67,17 @@ export function buildReport({ repo, stack, results, hasEvidence, verifiedAt, too
     // computeLevel already produces exactly that list — carrying it through
     // here means it doesn't need recomputing downstream.
     level: { id: level.id, name: t(level.nameKey, lang), unmetGates: level.unmetGates },
-    evidence: { verified: hasEvidence, verifiedAt: verifiedAt ? verifiedAt.toISOString() : null },
+    // `reason` is a stable, machine-readable identifier for *why* evidence
+    // isn't in effect (task-15 brief section B) — null exactly when
+    // `hasEvidence` is true. Left as an opaque string rather than
+    // pre-translated text so a JSON consumer can branch on it without
+    // string-matching localized prose; renderMarkdown looks up its
+    // translation via `evidence.reason.<id>` at render time instead.
+    evidence: {
+      verified: hasEvidence,
+      verifiedAt: verifiedAt ? verifiedAt.toISOString() : null,
+      reason: evidenceReason,
+    },
     subsystems,
   };
 }
@@ -126,6 +138,16 @@ export function renderMarkdown(report, lang) {
   lines.push(`# ${t('report.title', lang)}`, '');
   lines.push(t('report.score', lang, report.score), '');
   lines.push(t('report.level', lang, { id: report.level.id, name: report.level.name }), '');
+  // Task-15 brief section B: when evidence didn't take effect, say why —
+  // not just "unverified". `report.evidence.reason` is only ever null when
+  // verified is true (see buildReport), so this guard also protects
+  // callers/tests that build a report with `verified: false` but no
+  // `evidenceReason` at all (the field defaults to null) from a "missing
+  // i18n key" crash on a reason that was never supplied.
+  if (!report.evidence.verified && report.evidence.reason) {
+    const reasonText = t(`evidence.reason.${report.evidence.reason}`, lang);
+    lines.push(t('report.evidenceNote', lang, { text: reasonText }), '');
+  }
   lines.push(...renderSubsystemTable(report, lang));
   lines.push(...renderGapList(report, lang));
   return lines.join('\n');
