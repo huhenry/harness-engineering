@@ -203,6 +203,8 @@ test('isHardRule reflects the same hard/soft split', () => {
   // never evaluates allowPatterns for either), so isHardRule must say so.
   assert.equal(isHardRule('empty'), true);
   assert.equal(isHardRule('too-long'), true);
+  // round 4: same reasoning for 'unterminated-quote'.
+  assert.equal(isHardRule('unterminated-quote'), true);
 });
 
 // --- brief section C: the caller (Task 18's verify) needs to be able to
@@ -236,7 +238,7 @@ test("checkCommand reports patternId 'empty' for blank input", () => {
 });
 
 test('every patternId checkCommand can ever return resolves to a reason text in both languages', () => {
-  const allIds = [...DANGEROUS_PATTERNS.map((p) => p.id), 'empty', 'too-long'];
+  const allIds = [...DANGEROUS_PATTERNS.map((p) => p.id), 'empty', 'too-long', 'unterminated-quote'];
   for (const id of allIds) {
     const key = reasonKeyFor(id);
     assert.ok(typeof key === 'string' && key.length > 0, `${id} must have a resolvable reasonKey`);
@@ -261,7 +263,7 @@ test('deploy-words reason text says the rule is deliberately broad', () => {
 });
 
 test('hard-rule reason text says --allow cannot override it', () => {
-  for (const id of ['sudo', 'destructive-rm', 'find-delete', 'disk-write', 'too-long']) {
+  for (const id of ['sudo', 'destructive-rm', 'find-delete', 'disk-write', 'too-long', 'unterminated-quote']) {
     const key = reasonKeyFor(id);
     assert.match(t(key, 'en'), /--allow/);
     assert.match(t(key, 'zh'), /--allow/);
@@ -533,6 +535,119 @@ test('round 3 Critical 2: the restart-point adversarial shape stays fast at mult
         `${tool} at len ${cmd.length} took ${elapsed}ms -- possible quadratic regression (restart-point shape)`,
       );
     }
+  }
+});
+
+// --- round 4, Critical: bash joins an unquoted (or double-quoted)
+// `\<newline>` pair into one logical line *before* parsing -- the
+// backslash and the newline are both removed, not preserved as a
+// separator. splitIntoCanonicalSegments used to treat a bare newline as
+// always ending a segment, so `git \<newline> push origin main` -- one
+// real command per bash -- landed in two segments and neither contained
+// both "git" and "push". Systemic: hits every rule that needs to see two
+// things in one segment, which is most of them, including two hard rules.
+// Covers every vulnerable rule shape (not just git, per the coordinator's
+// explicit instruction), and both LF and CRLF continuations.
+const ROUND4_LINE_CONTINUATION_MUST_BLOCK_LF = [
+  ['rm \\\n -rf /', 'destructive-rm'],
+  ['find / \\\n -delete', 'find-delete'],
+  ['cp \\\n /dev/sda', 'disk-write'],
+  ['tee \\\n /dev/sda', 'disk-write'],
+  ['git \\\n push origin main', 'git-push'],
+  ['git \\\n reset --hard HEAD', 'git-destructive'],
+  ['git \\\n clean -fdx', 'git-destructive'],
+  ['kubectl \\\n delete pod x', 'k8s-delete'],
+  ['docker \\\n system prune -af', 'container-prune'],
+  ['terraform \\\n apply -auto-approve', 'iac-apply'],
+  ['helm \\\n upgrade myrelease chart/', 'iac-apply'],
+  ['npm \\\n publish', 'publish'],
+  ['twine \\\n upload dist/*', 'publish'],
+  ['cargo \\\n publish', 'publish'],
+];
+
+test('round 4 Critical: an LF line continuation no longer splits a tool from its dangerous subcommand', () => {
+  for (const [cmd, id] of ROUND4_LINE_CONTINUATION_MUST_BLOCK_LF) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${JSON.stringify(cmd)}`);
+    assert.equal(r.patternId, id, `wrong pattern for: ${JSON.stringify(cmd)}`);
+  }
+});
+
+test('round 4 Critical: the same holds for CRLF line continuations', () => {
+  const crlfCases = ROUND4_LINE_CONTINUATION_MUST_BLOCK_LF.map(
+    ([cmd, id]) => [cmd.replace('\\\n', '\\\r\n'), id],
+  );
+  for (const [cmd, id] of crlfCases) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${JSON.stringify(cmd)}`);
+    assert.equal(r.patternId, id, `wrong pattern for: ${JSON.stringify(cmd)}`);
+  }
+});
+
+test('round 4: backslash-newline stays fully literal inside single quotes (not a continuation)', () => {
+  // Real bash: backslash has no special meaning inside single quotes, so
+  // both the backslash and the newline stay literal content -- there is
+  // no line join, and this echo is harmless either way.
+  assert.equal(checkCommand("echo 'a\\\nb'").blocked, false);
+});
+
+// --- round 4, Important: an unterminated quote used to fail *open* --
+// splitIntoCanonicalSegments still emitted whatever partial segments it
+// had built, and checkCommand matched against them as if the parse were
+// trustworthy. Not exploitable today (a real shell rejects this input
+// outright), but a safety boundary shouldn't rely on a downstream parser
+// to catch what it already knows it can't reliably reason about.
+test('round 4 Important: an unterminated quote fails closed with its own patternId, not open', () => {
+  const r1 = checkCommand('git -C "unclosed push origin main');
+  assert.equal(r1.blocked, true);
+  assert.equal(r1.patternId, 'unterminated-quote');
+
+  const r2 = checkCommand("git -C 'unclosed push origin main");
+  assert.equal(r2.blocked, true);
+  assert.equal(r2.patternId, 'unterminated-quote');
+});
+
+test('round 4: unterminated-quote is non-overridable -- allowPatterns is never even evaluated', () => {
+  // An allow pattern that would obviously match if it were ever tested.
+  const r = checkCommand('git -C "unclosed push origin main', [/.*/]);
+  assert.equal(r.blocked, true);
+  assert.equal(r.patternId, 'unterminated-quote');
+  assert.equal(isHardRule('unterminated-quote'), true);
+});
+
+test('round 4: balanced quotes are unaffected by the unterminated-quote check', () => {
+  assert.equal(checkCommand('git -C "ok" push origin main').patternId, 'git-push');
+  assert.equal(checkCommand('"rm" -rf /').patternId, 'destructive-rm');
+  assert.equal(checkCommand('go test ./...').blocked, false);
+});
+
+// --- round 4: investigated and cleared by the coordinator, re-pinned here
+// so a future change can't silently regress it. A NUL byte can't reach
+// actual execution (node:child_process refuses any argument containing
+// one), so this module doesn't need its own NUL-specific rule -- but the
+// existing rules must keep behaving sanely (no crash, no false block) on
+// a NUL-containing string regardless.
+test('round 4: a NUL byte in the command does not crash or falsely block checkCommand', () => {
+  assert.doesNotThrow(() => checkCommand('rm\0 -rf /'));
+  assert.equal(checkCommand('rm\0 -rf /').blocked, false);
+});
+
+test('round 4: worst-case timing under the length cap after adding line-continuation and unterminated-quote handling', () => {
+  const budgetMs = 100;
+  const cases = [
+    // many backslash-newline continuations packed into the cap
+    () => ('git \\\n').repeat(400).slice(0, 2048),
+    // unterminated quote at max length (worst case for the new fail-closed path)
+    () => ('git -C "' + 'x'.repeat(2040)).slice(0, 2048),
+    // restart-point shape, re-measured after this round's changes
+    () => 'git '.repeat(512) + 'x',
+  ];
+  for (const build of cases) {
+    const cmd = build();
+    const start = Date.now();
+    checkCommand(cmd);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 40))}... (len ${cmd.length})`);
   }
 });
 

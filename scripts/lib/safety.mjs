@@ -88,6 +88,45 @@
  * none left inside the fused blob). A single unquoted word used as a
  * command name (`"rm" -rf /`) has no internal whitespace to fuse, so it
  * still dequotes cleanly to a real, matchable token.
+ *
+ * Fourth adversarial review round (fix base 939d689) found one more
+ * Critical and one Important, both in `splitIntoCanonicalSegments` itself:
+ *
+ *   C. Bash joins an unquoted (or double-quoted) `\<newline>` pair into a
+ *      single logical line *before* parsing anything else — the backslash
+ *      and the newline are both removed entirely, not preserved as a
+ *      literal separator. `splitIntoCanonicalSegments` didn't know this: it
+ *      treated a bare newline as always ending a segment (matching its
+ *      "unquoted separator" handling for `;`/`&`/`|`), so
+ *      `git \<newline> push origin main` — one real command, per bash —
+ *      landed in two different segments and neither one contained both
+ *      "git" and "push". This is systemic: it hits any rule that needs to
+ *      see two things (a tool name and a subcommand/flag) in the same
+ *      segment, which is most of them, including two hard rules
+ *      (`destructive-rm`, `find-delete`). Fixed by detecting `\<LF>` and
+ *      `\<CRLF>` line continuations and consuming both characters (three
+ *      for CRLF) with nothing emitted, *before* any of the quote/delimiter
+ *      logic runs — checked first in the loop, ahead of both the unquoted
+ *      and double-quoted backslash handling, since a plain "backslash
+ *      before whitespace" check would otherwise catch the newline first
+ *      (newline is whitespace) and take the wrong branch. This one
+ *      *doesn't* apply inside single quotes: real shells give backslash no
+ *      escaping power there at all, so `'a \<newline>b'` keeps both
+ *      characters fully literal, and the scan already skips the
+ *      continuation check whenever `quote === "'"`.
+ *   D. An unterminated quote (`git -C "unclosed push origin main`) made the
+ *      scanner fail *open*: `quote` was left non-null when the loop ended,
+ *      but the code still emitted whatever partial segments it had built
+ *      and let `checkCommand` match against them, i.e. it happily reasoned
+ *      about a parse it already knew was broken. Not exploitable today —
+ *      a real shell rejects this input outright with "unexpected EOF while
+ *      looking for matching quote" — but a safety boundary shouldn't rely
+ *      on a downstream parser to catch what it already knows it can't
+ *      trust. Fixed the same way `too-long` handles unanalyzable input:
+ *      `splitIntoCanonicalSegments` now returns `null` when the scan ends
+ *      with an open quote, and `checkCommand` treats that as an immediate,
+ *      non-overridable block (`'unterminated-quote'`) rather than matching
+ *      against segments derived from a parse it knows is unreliable.
  */
 
 // A `harness.config.json`-declared verification command is meant to be a
@@ -338,17 +377,19 @@ export const DANGEROUS_PATTERNS = [
   },
 ];
 
-// Not part of DANGEROUS_PATTERNS: neither the empty-command nor the
-// too-long-to-analyze case is a dangerous *pattern* match (there is either
-// nothing to run, or nothing this module will safely attempt to check), so
-// neither belongs in the array the "pattern ids are unique / every pattern
-// has a re" invariant is checked against. Both still need a reason text a
-// caller can look up by patternId, which reasonKeyFor below provides
-// uniformly across all three cases.
+// Not part of DANGEROUS_PATTERNS: an empty command, a too-long command, and
+// a command with an unterminated quote are none of them a dangerous
+// *pattern* match (there is either nothing to run, or nothing this module
+// will safely attempt to check), so none of the three belongs in the array
+// the "pattern ids are unique / every pattern has a re" invariant is
+// checked against. Each still needs a reason text a caller can look up by
+// patternId, which reasonKeyFor below provides uniformly across all three.
 const EMPTY_PATTERN_ID = 'empty';
 const EMPTY_REASON_KEY = 'safety.empty';
 const TOO_LONG_PATTERN_ID = 'too-long';
 const TOO_LONG_REASON_KEY = 'safety.too-long';
+const UNTERMINATED_QUOTE_PATTERN_ID = 'unterminated-quote';
+const UNTERMINATED_QUOTE_REASON_KEY = 'safety.unterminated-quote';
 
 /**
  * Quote-aware linear scan, used in place of both round 2's character-class
@@ -387,6 +428,23 @@ const TOO_LONG_REASON_KEY = 'safety.too-long';
  *      way as unquoted, except a backslash-before-whitespace does not need
  *      the same non-fusing-barrier treatment, because that whitespace was
  *      already going to be fused to `_` regardless.
+ *   4. Removes an unquoted or double-quoted `\<LF>`/`\<CRLF>` line
+ *      continuation entirely (see round-4 finding C in the file-level
+ *      comment) — checked first, before anything else, so it can't be
+ *      shadowed by the more general "backslash before whitespace" handling
+ *      in (2) (a bare newline is whitespace too, and that path is for a
+ *      genuinely different case). Does not apply inside single quotes,
+ *      where backslash has no special meaning and both characters of
+ *      `\<newline>` stay fully literal, same as any other character there.
+ *
+ * Returns `null` — instead of a segments array — if the scan ends with a
+ * quote still open (round-4 finding D): rather than match dangerous-command
+ * rules against segments derived from a parse it already knows is broken,
+ * `checkCommand` treats a `null` return as its own immediate, non-
+ * overridable block. Not exploitable today (a real shell rejects
+ * unterminated-quote input outright, before it would ever run), but a
+ * safety boundary shouldn't depend on a downstream parser to catch what it
+ * already knows it can't reliably reason about.
  */
 function splitIntoCanonicalSegments(cmd) {
   const segments = [];
@@ -394,6 +452,12 @@ function splitIntoCanonicalSegments(cmd) {
   let quote = null; // null | "'" | '"'
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i];
+
+    if (quote !== "'") {
+      if (ch === '\\' && cmd[i + 1] === '\n') { i += 1; continue; }
+      if (ch === '\\' && cmd[i + 1] === '\r' && cmd[i + 2] === '\n') { i += 2; continue; }
+    }
+
     if (quote === "'") {
       if (ch === "'") { quote = null; continue; }
       out += /\s/.test(ch) ? '_' : ch;
@@ -432,6 +496,7 @@ function splitIntoCanonicalSegments(cmd) {
     }
     out += ch;
   }
+  if (quote !== null) return null; // unterminated quote — see the doc comment above
   segments.push({ text: out, delimiter: null });
   return segments;
 }
@@ -462,27 +527,32 @@ function hasPipeToShell(segments) {
 
 /**
  * Resolve any patternId `checkCommand` can ever return — including the
- * `'empty'` and `'too-long'` sentinels, neither of which has an entry in
- * `DANGEROUS_PATTERNS` — to its i18n reason key. Returns null for an id
- * that isn't recognized, rather than throwing, so a caller can defensively
- * check before calling `t()`.
+ * `'empty'`, `'too-long'`, and `'unterminated-quote'` sentinels, none of
+ * which has an entry in `DANGEROUS_PATTERNS` — to its i18n reason key.
+ * Returns null for an id that isn't recognized, rather than throwing, so a
+ * caller can defensively check before calling `t()`.
  */
 export function reasonKeyFor(patternId) {
   if (patternId === EMPTY_PATTERN_ID) return EMPTY_REASON_KEY;
   if (patternId === TOO_LONG_PATTERN_ID) return TOO_LONG_REASON_KEY;
+  if (patternId === UNTERMINATED_QUOTE_PATTERN_ID) return UNTERMINATED_QUOTE_REASON_KEY;
   return DANGEROUS_PATTERNS.find((p) => p.id === patternId)?.reasonKey ?? null;
 }
 
 /**
  * Whether `--allow` is even eligible to override this rule. See
- * checkCommand. `'empty'` and `'too-long'` both report `true` here even
- * though neither is a `DANGEROUS_PATTERNS` entry: `checkCommand` never
- * even evaluates `allowPatterns` for either case (see below), so both are
- * non-overridable in fact, and `isHardRule` should say so rather than
- * defaulting an unrecognized id to `false`.
+ * checkCommand. `'empty'`, `'too-long'`, and `'unterminated-quote'` all
+ * report `true` here even though none is a `DANGEROUS_PATTERNS` entry:
+ * `checkCommand` never even evaluates `allowPatterns` for any of the three
+ * (see below), so all are non-overridable in fact, and `isHardRule` should
+ * say so rather than defaulting an unrecognized id to `false`.
  */
 export function isHardRule(patternId) {
-  if (patternId === EMPTY_PATTERN_ID || patternId === TOO_LONG_PATTERN_ID) return true;
+  if (
+    patternId === EMPTY_PATTERN_ID
+    || patternId === TOO_LONG_PATTERN_ID
+    || patternId === UNTERMINATED_QUOTE_PATTERN_ID
+  ) return true;
   return DANGEROUS_PATTERNS.find((p) => p.id === patternId)?.hard === true;
 }
 
@@ -493,8 +563,9 @@ export function isHardRule(patternId) {
  * — see task-16-report.md section C for the full reasoning):
  *   - `blocked`: true iff the command must not run.
  *   - `patternId`: the id of the rule currently blocking it, or the
- *     `'empty'`/`'too-long'` sentinels for blank or oversized input; null
- *     whenever blocked is false.
+ *     `'empty'` / `'too-long'` / `'unterminated-quote'` sentinels for
+ *     blank, oversized, or unparseable input; null whenever blocked is
+ *     false.
  *   - `overriddenBy`: the id of the rule that *would* have blocked this
  *     command had an `--allow` pattern not matched it; null otherwise. This
  *     is what lets Task 18's verify report "this would have been blocked by
@@ -513,7 +584,10 @@ export function isHardRule(patternId) {
  * cap is that *no* regex, whether one of this module's own or a caller-
  * supplied `--allow` pattern of unknown shape, should ever run against
  * unbounded adversarial input, so `'too-long'` is not overridable (see
- * `isHardRule`).
+ * `isHardRule`). A command whose quoting `splitIntoCanonicalSegments`
+ * cannot reliably resolve (an unterminated quote) is refused the same way,
+ * as `'unterminated-quote'`, for the same reason: don't reason about — or
+ * let `--allow` reason about — a parse already known to be broken.
  *
  * `--allow` can only unblock a *soft* rule (`hard: false`). The four hard
  * rules — sudo, destructive-rm, find-delete, disk-write — stay blocked
@@ -543,6 +617,10 @@ export function checkCommand(cmd, allowPatterns = []) {
   }
 
   const segments = splitIntoCanonicalSegments(cmd);
+  if (segments === null) {
+    return { blocked: true, patternId: UNTERMINATED_QUOTE_PATTERN_ID, overriddenBy: null };
+  }
+
   let hit = null;
   for (const p of DANGEROUS_PATTERNS) {
     if (p.id === 'pipe-to-shell') {
