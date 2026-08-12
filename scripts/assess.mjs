@@ -189,7 +189,7 @@ if (isMainModule()) {
   } catch (err) {
     if (err instanceof CliError) {
       process.stderr.write(`${err.message}\n`);
-      process.exit(2);
+      process.exit(err.exitCode);
     }
     // Deliberately a different code from both CliError (2, "you mistyped
     // something") and a gate failure (1, "the repo scored below the bar" —

@@ -26,8 +26,8 @@ export const MESSAGES = {
 
     // --- evidence freshness reasons ---
     'evidence.reason.missing': 'No verify evidence found — run `verify --run` to generate `.harness/verify-report.json`.',
-    'evidence.reason.schemaMismatch': 'The verify report has an unsupported schema version and was ignored.',
-    'evidence.reason.invalidTimestamp': 'The verify report has an invalid or future-dated timestamp and was ignored.',
+    'evidence.reason.schemaMismatch': 'The verify report has an unsupported schema version and was ignored — run `verify --run` again with the current tool version to regenerate it.',
+    'evidence.reason.invalidTimestamp': 'The verify report has an invalid or future-dated timestamp and was ignored (check for clock skew, or a hand-edited file) — run `verify --run` again to produce a trustworthy one.',
     'evidence.reason.stale': 'The verify report is older than 24 hours and was ignored — run `verify --run` again for fresh evidence.',
     'evidence.reason.failed': 'The verify report is fresh and valid, but the run did not pass, so it does not count as evidence — get it green first.',
 
@@ -185,8 +185,8 @@ export const MESSAGES = {
 
     // --- 证据新鲜度原因 ---
     'evidence.reason.missing': '未找到验证证据——跑一遍 `verify --run` 生成 `.harness/verify-report.json`。',
-    'evidence.reason.schemaMismatch': '验证报告的 schema 版本不受支持，已忽略。',
-    'evidence.reason.invalidTimestamp': '验证报告的时间戳无效或晚于当前时间，已忽略。',
+    'evidence.reason.schemaMismatch': '验证报告的 schema 版本不受支持，已忽略——用当前版本的工具重新跑一遍 `verify --run` 重新生成。',
+    'evidence.reason.invalidTimestamp': '验证报告的时间戳无效或晚于当前时间，已忽略（可能是时钟偏差，也可能是文件被手动改过）——重新跑一遍 `verify --run` 生成一份可信的时间戳。',
     'evidence.reason.stale': '验证报告已超过 24 小时，已忽略——重新跑一遍 `verify --run` 获取新证据。',
     'evidence.reason.failed': '验证报告是新鲜且合法的，但本次运行没有通过，因此不算作证据——先跑绿再说。',
 

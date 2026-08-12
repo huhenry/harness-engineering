@@ -181,6 +181,44 @@ test('an unexpected internal error exits neither 1 nor 2', (t) => {
   assert.notEqual(code, 2, 'a write failure is not "you mistyped a flag"');
 });
 
+// --- config.ignore must actually reach stack detection (two ScanContexts) --
+
+// Regression pin for the two-ScanContext design documented at
+// runAssess's `scanCtx` line: createScanContext never reads config on its
+// own, so `ignore` only takes effect when passed explicitly. Merging the
+// two contexts (`const scanCtx = ctx`) would silently disable `ignore` for
+// the whole run — this repo's own fixtures/*/go.mod already demonstrates
+// the failure mode (see task-15-report.md for the mutation proof: this
+// exact test goes red against that one-line merge, and the rest of the
+// 261-test suite does not catch it on its own).
+test('harness.config.json\'s ignore excludes a nested manifest from stack detection', (t) => {
+  const dst = mkdtempSync(join(tmpdir(), 'harness-ignore-'));
+  t.after(() => rmSync(dst, { recursive: true, force: true }));
+  // 'node' is always detected via the root package.json regardless of
+  // ignore, so it acts as a control signal: if ignore silently stopped
+  // working, 'node' would still be there but 'go' would wrongly appear too.
+  //
+  // The nested manifest deliberately does NOT live under any of
+  // scan.mjs's own DEFAULT_IGNORE names (node_modules/.git/dist/build/
+  // vendor) — an earlier version of this test used 'vendor/', which is
+  // itself one of those built-in defaults, so the manifest was excluded
+  // regardless of whether config.ignore ever reached stack detection at
+  // all, and the test could never have gone red. 'thirdparty/' carries no
+  // built-in meaning, so only the explicit config.ignore below can hide it.
+  writeFileSync(join(dst, 'package.json'), JSON.stringify({ name: 'demo' }));
+  mkdirSync(join(dst, 'thirdparty'), { recursive: true });
+  writeFileSync(join(dst, 'thirdparty', 'go.mod'), 'module vendored\n');
+  writeFileSync(join(dst, 'harness.config.json'), JSON.stringify({ ignore: ['thirdparty/**'] }));
+
+  const r = runAssess({ repoPath: dst, lang: 'en', now: NOW });
+  assert.deepEqual(
+    r.stack,
+    ['node'],
+    'thirdparty/go.mod must be excluded by the declared ignore — if this includes "go", ' +
+    'stack detection ran on a ScanContext that never received config.ignore',
+  );
+});
+
 // --- read-only contract --------------------------------------------------
 
 function hashTree(dir) {
