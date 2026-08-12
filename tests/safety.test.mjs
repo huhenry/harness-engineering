@@ -896,6 +896,85 @@ test('round 6: worst-case timing under the length cap after adding basename look
   }
 });
 
+// --- round 7 (final round): generalizes shell-indirection's own principle
+// one level earlier -- not just "the -c/eval payload is opaque," but "the
+// binary name itself is," when it comes from a shell expansion.
+test('round 7: a binary supplied via command substitution or a variable reference is blocked', () => {
+  const r1 = checkCommand('$(which rm) -rf /');
+  assert.equal(r1.blocked, true);
+  assert.equal(r1.patternId, 'unresolved-binary');
+
+  const r2 = checkCommand('$SHELL -c "rm -rf /"');
+  assert.equal(r2.blocked, true);
+  assert.equal(r2.patternId, 'unresolved-binary');
+});
+
+test('round 7: the expansion-in-binary-position check tolerates a leading chain of recognized prefix commands', () => {
+  // Round 6 confirmed sudo/nohup/time/command/xargs/env prefixes must stay
+  // unblocked *on their own* -- this checks the combination, where the
+  // prefix chain is legitimate but what it ultimately runs is not
+  // resolvable, e.g. `env FOO=1 $(which rm) -rf /`.
+  assert.deepEqual(
+    [checkCommand('env FOO=1 $(which rm) -rf /').patternId, checkCommand('nohup $SHELL -c "rm -rf /"').patternId],
+    ['unresolved-binary', 'unresolved-binary'],
+  );
+  // sudo is the one exception in this set, and deliberately so: `sudo`
+  // itself is checked before unresolved-binary in DANGEROUS_PATTERNS
+  // order (the same "more severe classification wins when a command
+  // genuinely matches more than one rule" precedent as `curl ... | sudo
+  // sh` reporting 'sudo' rather than 'pipe-to-shell' in round 5/6) --
+  // still correctly blocked, just under the more specific id.
+  const r = checkCommand('sudo $(which rm) -rf /');
+  assert.equal(r.blocked, true);
+  assert.equal(r.patternId, 'sudo');
+});
+
+test('round 7: expansions in argument position (not binary position) remain completely ordinary and unblocked', () => {
+  for (const cmd of [
+    'npm test --grep "$PATTERN"',
+    'make BUILD_DIR=$HOME/out',
+    'echo $HOME',
+    'go build -ldflags "-X main.version=$VERSION"',
+  ]) {
+    assert.equal(checkCommand(cmd).blocked, false, `should allow: ${cmd}`);
+  }
+});
+
+test('round 7: unresolved-binary is soft -- --allow remains the escape hatch once the expansion has been confirmed safe', () => {
+  assert.equal(isHardRule('unresolved-binary'), false);
+  const r = checkCommand('$(which rm) -rf /', [/^\$\(which rm\) -rf \/$/]);
+  assert.equal(r.blocked, false);
+  assert.equal(r.overriddenBy, 'unresolved-binary');
+});
+
+test('round 7: everything the coordinator\'s sweep confirmed already held stays blocked with the right pattern', () => {
+  assert.equal(checkCommand('busybox rm -rf /').patternId, 'destructive-rm');
+  assert.equal(checkCommand('exec rm -rf /').patternId, 'destructive-rm');
+  assert.equal(checkCommand('sudo sh -c "rm -rf /"').patternId, 'sudo');
+  assert.equal(checkCommand('rm -rf --no-preserve-root /').patternId, 'destructive-rm');
+  assert.equal(checkCommand('git push --force-with-lease').patternId, 'git-push');
+  assert.equal(checkCommand('kubectl delete --all pods').patternId, 'k8s-delete');
+  assert.equal(checkCommand('docker volume rm data').patternId, 'container-prune');
+});
+
+test('round 7: worst-case timing under the length cap after adding the unresolved-binary scan', () => {
+  const budgetMs = 100;
+  const cases = [
+    // prefix-chain scan never resolving to an expansion, packed toward the cap
+    () => 'env FOO=1 '.repeat(186) + 'x',
+    // restart-point shape, re-measured one final time after this round's changes
+    () => 'git '.repeat(512) + 'x',
+    () => 'rm '.repeat(682) + 'x',
+  ];
+  for (const build of cases) {
+    const cmd = build().slice(0, 2048);
+    const start = Date.now();
+    checkCommand(cmd);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 30))}... (len ${cmd.length})`);
+  }
+});
+
 test('round 2: [^;&|]* rules still stop at a shell separator, so piped/chained commands are not blocked', () => {
   assert.equal(checkCommand('git status | grep push').blocked, false);
   assert.equal(checkCommand('echo hello && git status').blocked, false);

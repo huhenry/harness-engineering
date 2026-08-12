@@ -191,6 +191,22 @@
  *      exactly the place five rounds of review have shown new complexity
  *      tends to hide the next bug. This is a *soft* rule — `--allow`
  *      remains the escape hatch for a payload a human has actually read.
+ *
+ * Seventh and final adversarial review round (fix base cdfe99c) generalized
+ * round 6's own shell-indirection principle one level earlier: `$(which
+ * rm) -rf /` and `$SHELL -c "rm -rf /"` supply the *binary itself* through
+ * a shell expansion (command substitution or a variable reference), so
+ * this module cannot know what will run — the same "unanalyzable, so
+ * refuse rather than guess" reasoning as shell-indirection, just applied
+ * to the program name instead of a `-c`/`eval` payload. `hasUnresolvedBinary`
+ * (below) blocks a `$`- or backtick-led token in binary position — scoped
+ * deliberately to that position only, so `npm test --grep "$PATTERN"` and
+ * `make BUILD_DIR=$HOME/out` (expansions in *argument* position, completely
+ * ordinary) are unaffected. This is the last round: see task-16-report.md's
+ * Limitations section for what this module still cannot see (arbitrary
+ * evasion through shell expansion beyond the binary position, ANSI-C
+ * quoting) and why those are a deliberately accepted boundary rather than
+ * an oversight.
  */
 
 // A `harness.config.json`-declared verification command is meant to be a
@@ -473,6 +489,19 @@ export const DANGEROUS_PATTERNS = [
     id: 'shell-indirection',
     re: /\b(sh|bash|zsh|dash|ksh)\b[\s\S]*-[a-zA-Z]*c[a-zA-Z]*\b|\beval\b/,
     reasonKey: 'safety.shell-indirection',
+    hard: false,
+  },
+  // Round 7 (final round) — see `hasUnresolvedBinary`'s comment (below the
+  // array) for the full design. Generalizes shell-indirection's own
+  // principle one level earlier: not just "the payload is opaque," but
+  // "the binary name itself is." Soft, for the same reason
+  // shell-indirection is: this module is declining to guess, not
+  // asserting the resolved binary is definitely dangerous. This `re`
+  // field is documentation-only, like the other token-scanner rules above.
+  {
+    id: 'unresolved-binary',
+    re: /^\s*(?:(?:sudo|nohup|time|command|xargs|env)\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*[$`]/,
+    reasonKey: 'safety.unresolved-binary',
     hard: false,
   },
   // Deliberately the broadest rule in the list — see reasonKey text for the
@@ -796,12 +825,61 @@ function hasShellIndirection(segments) {
   return false;
 }
 
+// Round 7 (final round): `$(which rm) -rf /` and `$SHELL -c "rm -rf /"`
+// both supply the *binary itself* through a shell expansion — a
+// generalization of shell-indirection's own principle ("unanalyzable, so
+// refuse rather than guess"), applied one level earlier: not just "the
+// payload of -c/eval is opaque," but "the very name of the program about
+// to run is." A token starting with `$` (covers `$(...)` command
+// substitution, `$VAR`, and `${VAR}` — all three share that leading
+// character) or a backtick (the other command-substitution syntax) in
+// binary position means this module cannot know what will execute.
+//
+// Deliberately scoped to *binary position only* — `npm test --grep
+// "$PATTERN"` and `make BUILD_DIR=$HOME/out` are completely ordinary and
+// must not be flagged, since an expansion in argument position doesn't
+// change *what program* runs. "Binary position" here means: the first
+// token of a segment, after skipping a leading chain of recognized prefix
+// commands (`sudo`, `nohup`, `time`, `command`, `xargs`, `env` — the same
+// ones round 6 confirmed must stay unblocked on their own) and
+// `VAR=value`-shaped assignment tokens in front of it, e.g. `env FOO=1
+// $(which rm) -rf /`.
+//
+// Deliberately does *not* attempt to also skip a prefix command's own
+// flags (`sudo -u root $(which rm) -rf /` is not caught by this — the
+// scan lands on `-u`, which doesn't look like an expansion, and stops
+// there) — modeling each prefix command's own flag syntax is exactly the
+// kind of speculative complexity six rounds of review have shown tends to
+// hide the next bug, and neither of this round's two actual findings
+// needed it. Disclosed explicitly in task-16-report.md's Limitations
+// section rather than silently left as an assumed-complete fix.
+const INDIRECTION_PREFIX_COMMANDS = new Set(['sudo', 'nohup', 'time', 'command', 'xargs', 'env']);
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+function hasUnresolvedBinary(segments) {
+  for (const seg of segments) {
+    const tokens = seg.text.split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (
+      i < tokens.length
+      && (INDIRECTION_PREFIX_COMMANDS.has(basename(tokens[i])) || ENV_ASSIGNMENT.test(tokens[i]))
+    ) {
+      i++;
+    }
+    if (i >= tokens.length) continue;
+    const candidate = tokens[i];
+    if (candidate.startsWith('$') || candidate.startsWith('`')) return true;
+  }
+  return false;
+}
+
 // Rule ids whose real detection logic is one of the functions above rather
 // than `p.re.test(segment.text)` — see checkCommand's matching loop.
 const DEDICATED_MATCHERS = {
   'destructive-rm': hasDangerousRm,
   'git-destructive': hasGitDestructive,
   'pipe-to-shell': hasPipeToShell,
+  'unresolved-binary': hasUnresolvedBinary,
   'shell-indirection': hasShellIndirection,
 };
 
