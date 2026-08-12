@@ -156,6 +156,7 @@ export const MESSAGES = {
     // override instruction instead.
     'safety.sudo': 'This runs with `sudo` — once a command escalates to root, none of the checks a normal user would trip on are still in effect. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
     'safety.destructive-rm': 'This deletes files recursively and/or without confirmation (`-r`, `-f`, `--recursive`, or `--force` on `rm`), and there is no undo once the wrong path gets caught in it. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
+    'safety.find-delete': 'This recursively deletes every file `find` matches (`-delete`, or `-exec rm ...`), and a search path that is too broad turns it into `rm -rf` for an entire subtree in one command. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
     'safety.disk-write': 'This writes straight to a raw disk device or overwrites a system authentication file (`mkfs`, `dd if=`, or a redirect into /dev/sd*, /dev/nvme*, /dev/disk*, /etc/passwd, /etc/shadow, or /etc/sudoers) — enough to destroy every file on the machine or lock every account out of it. This is a hard rule: `--allow` cannot override it. If you are certain the command is safe, run it yourself outside `verify --run`.',
     'safety.power': 'This shuts down, reboots, or halts the machine, taking the process running `verify --run` down with it along with everything else on the same host. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
     'safety.git-push': 'This pushes to a remote and can move or overwrite a branch other people are already relying on. Override with `--allow` and a pattern matching only this command, once you are sure it should run.',
@@ -335,6 +336,7 @@ export const MESSAGES = {
     // 结尾都给出放行方式。
     'safety.sudo': '这条命令带 `sudo` 执行——一旦提权到 root，普通用户会被拦下的检查在这里全部失效。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
     'safety.destructive-rm': '这条命令会递归删除文件和/或跳过确认（`rm` 带 `-r`、`-f`、`--recursive` 或 `--force`），一旦路径写错就没有撤销可言。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
+    'safety.find-delete': '这条命令会递归删除 `find` 匹配到的每一个文件（`-delete`，或者 `-exec rm ...`），搜索路径一旦写宽了，效果就跟对整个子树跑一次 `rm -rf` 没什么两样。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
     'safety.disk-write': '这条命令直接写裸磁盘设备，或覆盖系统鉴权文件（`mkfs`、`dd if=`，或者重定向写入 /dev/sd*、/dev/nvme*、/dev/disk*、/etc/passwd、/etc/shadow、/etc/sudoers），足以毁掉整台机器上的所有文件，或者把所有账号都锁在门外。这是硬规则：`--allow` 无法覆盖。如果你确认这条命令安全，请自己在 `verify --run` 之外手动执行。',
     'safety.power': '这条命令会关机、重启或挂起整台机器，跑着 `verify --run` 的这个进程和同一台机器上的其他东西会一起被带走。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.git-push': '这条命令会推送到远程仓库，可能移动或覆盖别人正依赖的分支。如果你确认这条命令该跑，用 `--allow` 加一条只匹配它的正则放行。',

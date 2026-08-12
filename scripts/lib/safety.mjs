@@ -10,6 +10,36 @@
  * costs the user one `--allow` flag. A false negative can be
  * unrecoverable (wiped disk, force-pushed history, a machine that just
  * rebooted mid-task). Every regex here is written to fail closed.
+ *
+ * Second adversarial review round (fix base 34d3c08) found 16 real commands
+ * that walked straight through the first version, all traced to two
+ * further structural root causes beyond the trailing-`\b` bug below:
+ *
+ *   1. Rules shaped `\bTOOL\s+SUBCOMMAND\b` assumed the subcommand sits
+ *      immediately after the tool name. `git -C <path> push`, `kubectl -n
+ *      <ns> delete`, `docker --context <ctx> system prune`, and
+ *      `dd bs=4M if=...` are standard everyday usage, not obfuscation — a
+ *      global flag between the tool and its subcommand is completely
+ *      ordinary. Every rule of this shape now uses `\bTOOL\b[^;&|]*\b...`
+ *      instead: the gap between tool and subcommand can be anything except
+ *      a shell separator (`;`, `&`, `|`), so the match still can't cross
+ *      into a different piped/chained command (`git status | grep push`
+ *      stays unblocked). This *does* introduce new false positives — the
+ *      subcommand word can now appear anywhere in the same shell segment,
+ *      including inside an unrelated flag value or a quoted commit message
+ *      (`git log --grep=push`, `git commit -m "add push support"`) — which
+ *      is a consciously accepted trade (one `--allow` flag vs. a missed
+ *      force-push), not a side effect. See task-16-report.md's round-2
+ *      section for the full list of rules this applies to and why.
+ *   2. Quoting and backslash-escaping defeat a literal-token match without
+ *      changing what the shell actually runs: `"rm" -rf /`, `'rm' -rf /`,
+ *      and `r\m -rf /` all invoke the real `rm` binary, but none of them
+ *      contain the literal substring `rm ` (space-terminated) the old
+ *      regex needed. `normalizeForMatching` below strips exactly the
+ *      characters that hide a token this way while leaving shell semantics
+ *      that matter (like backslash-space, which prevents a space from
+ *      being an argument separator) alone; `checkCommand` matches against
+ *      both the raw and the normalized string.
  */
 
 // Every pattern below is written to avoid a specific class of bug: a
@@ -59,24 +89,52 @@ export const DANGEROUS_PATTERNS = [
     reasonKey: 'safety.destructive-rm',
     hard: true,
   },
-  // The `\bdd\s+if=|>\s*\/dev\/(sd|nvme|disk)` half is the controller's
-  // corrected version: the original had a trailing `\b` after the whole
-  // alternation, which for `dd if=/dev/zero of=/dev/sda` sat between `=`
-  // and `/` — both non-word characters, so `\b` never held and the entire
-  // match failed despite `dd if=` being right there in the string. Dropping
-  // the trailing `\b` fixes it without weakening anything: `dd\s+if=` and
-  // `>\s*\/dev\/(sd|nvme|disk)` are already fully specific on their own.
-  // The `/etc/(passwd|shadow|sudoers)` half is an addition from this task:
-  // overwriting a system auth file via a `>`/`>>` redirect is at least as
-  // catastrophic as writing to a raw block device (it can lock out every
-  // account, or grant one) and was not covered by the original /dev/*-only
-  // destination list. It uses `(?![\w.-])` rather than `\b` for the same
-  // reason as destructive-rm above: `\b` would also match `/etc/passwd.bak`
-  // or `/etc/passwd-old` (word 'd' to non-word '.'/'-' is a boundary),
-  // which are unrelated files that happen to share a prefix.
+  // A genuinely different concept from destructive-rm, not just another
+  // spelling of it (per round-2 review guidance: new id, not folded into
+  // an existing one) — `find ... -delete` and `find ... -exec rm ...`
+  // don't involve a bare `rm` invocation at all, so nothing above would
+  // ever catch `find / -delete`. Same severity class as destructive-rm
+  // (a loose search path deletes an entire subtree in one command, no
+  // undo), hence `hard: true`. Uses the same `\bTOOL\b[^;&|]*\b...` shape
+  // as the round-2 tool/subcommand fixes below, since `find`'s dangerous
+  // flag is just as commonly separated from `find` itself by a path and
+  // other predicates (`find / -type f -delete`).
+  {
+    id: 'find-delete',
+    re: /\bfind\b[^;&|]*(-delete\b|-exec\s+rm\b)/,
+    reasonKey: 'safety.find-delete',
+    hard: true,
+  },
+  // Round-1 (`\bmkfs\b|\bdd\s+if=|>\s*\/dev\/(sd|nvme|disk)`) already fixed
+  // the trailing-`\b` bug — see the file-level comment. Round-2 review
+  // found two further gaps in the same rule, both fixed here:
+  //
+  //  - `dd\s+if=` required `if=` immediately after `dd`, so
+  //    `dd bs=4M if=/dev/zero of=/dev/sda status=progress` (a completely
+  //    ordinary way to write a `dd` invocation — flags before `if=` are
+  //    ubiquitous) and `dd of=/dev/sda if=/dev/zero` (if= present but not
+  //    first) both slipped through. Rather than loosening to
+  //    `\bdd\b[^;&|]*\bif=` (which would still miss `dd of=/dev/sda` with
+  //    no `if=` at all, e.g. reading from stdin via
+  //    `cat image.img | dd of=/dev/sda`), this drops the `if=` requirement
+  //    entirely: bare `\bdd\b`. There is no legitimate use of a shell
+  //    token literally named `dd` in a verification/build/test command
+  //    that isn't raw block-level copying, so requiring a specific
+  //    argument to be present bought precision this rule doesn't need and
+  //    cost the coverage above. `\b...\b` still correctly excludes
+  //    `ddtrace-run`, `add if=x`, and `./cmd/ddl` (checked below).
+  //  - Writing to a raw block device via `cp` or `tee` instead of `dd`/`>`
+  //    wasn't covered at all (`cp /dev/zero /dev/sda`, `cp image.iso
+  //    /dev/sdb`, `tee /dev/sda`). Added `\b(cp|tee)\b[^;&|]*\/dev\/(sd|
+  //    nvme|disk)` — deliberately doesn't distinguish source vs.
+  //    destination position (cp's destination is usually, but not always
+  //    provably from a regex, the last argument), so `cp /dev/sda
+  //    backup.img` — a legitimate disk-image *read* — also blocks. Over-
+  //    blocking is the accepted direction here: unattended reads of a raw
+  //    device are unusual enough to warrant a human look too.
   {
     id: 'disk-write',
-    re: /\bmkfs\b|\bdd\s+if=|>\s*\/dev\/(sd|nvme|disk)|>\s*\/etc\/(passwd|shadow|sudoers)(?![\w.-])/,
+    re: /\bmkfs\b|\bdd\b|>\s*\/dev\/(sd|nvme|disk)|>\s*\/etc\/(passwd|shadow|sudoers)(?![\w.-])|\b(cp|tee)\b[^;&|]*\/dev\/(sd|nvme|disk)/,
     reasonKey: 'safety.disk-write',
     hard: true,
   },
@@ -86,56 +144,96 @@ export const DANGEROUS_PATTERNS = [
     reasonKey: 'safety.power',
     hard: false,
   },
+  // Round-2: `\bgit\s+push\b` required `push` immediately after `git`, so
+  // `git -C /path push` (an everyday way to run git against a repo that
+  // isn't the cwd) walked straight through. Loosened to
+  // `\bgit\b[^;&|]*\bpush\b` — see the file-level comment for the accepted
+  // false-positive trade this shape carries (the word "push" can now
+  // appear anywhere in the same git invocation before a shell separator,
+  // including a commit message: `git commit -m "add push support"` now
+  // also blocks). `[^;&|]*` can never cross `;`, `&`, or `|`, so
+  // `git status | grep push` still doesn't block.
   {
     id: 'git-push',
-    re: /\bgit\s+push\b/,
+    re: /\bgit\b[^;&|]*\bpush\b/,
     reasonKey: 'safety.git-push',
     hard: false,
   },
-  // Corrected per the controller: the original wrapped the whole
-  // alternation in a trailing `\b` — `\bgit\s+(...|clean\s+-[a-zA-Z]*[fd]|...)\b`.
-  // For "git clean -fdx", every backtracking path through
-  // `-[a-zA-Z]*[fd]` that lets the rest of the string exist ends with the
-  // matched `[fd]` character immediately followed by another letter (the
-  // 'x', or whatever letter `[a-zA-Z]*` gave back), i.e. a word/word
-  // transition — `\b` never holds on any path, so the whole alternative
-  // fails and "git clean -fdx" (a real, spec-required must-block case)
-  // passed straight through. `reset\s+--hard\b` and `filter-branch\b` were
-  // never broken (they end on a fixed literal, not a backtracking class),
-  // so only the shared trailing `\b` — now removed — was the bug.
+  // Round-1 fixed the trailing-`\b` bug (see file-level comment: "git
+  // clean -fdx" silently failed to match). Round-2 found the same
+  // tool/subcommand-adjacency gap as git-push: `git -C /path reset --hard`
+  // and `git -C /path clean -fdx` slipped past `\bgit\s+(reset...)`.
+  // Loosened `git` -> subcommand the same way. Deliberately *not* loosened
+  // further inside each alternative (`reset` -> `--hard`, `clean` ->
+  // its flags): those are subcommand-internal option pairs, not
+  // tool-level global flags, and `git reset --hard` / `git clean -f...`
+  // are always written adjacently in practice. Also added `--force` as a
+  // long-form alternative to `clean`'s short flags (`git clean --force`
+  // is valid GNU-style long-form and wasn't matched by
+  // `-[a-zA-Z]*[fd]`), the same long-form gap already fixed for
+  // destructive-rm in round 1 — found while re-touching this rule, not
+  // part of the review's 16 leaks, but the identical bug class.
   {
     id: 'git-destructive',
-    re: /\bgit\s+(reset\s+--hard\b|clean\s+-[a-zA-Z]*[fd]|filter-branch\b)/,
+    re: /\bgit\b[^;&|]*\b(reset\s+--hard\b|clean\s+(?:-[a-zA-Z]*[fd]|--force(?![a-zA-Z-]))|filter-branch\b)/,
     reasonKey: 'safety.git-destructive',
     hard: false,
   },
+  // Round-2: `docker --context remote system prune -af` slipped past
+  // `\bdocker\s+(system\s+prune|...)`. Loosened `docker` -> subcommand;
+  // left `system` -> `prune` and `volume` -> `rm` adjacent, since those
+  // are two-word Docker subcommands where nothing can legally sit between
+  // the words (`docker system prune` is the whole subcommand name, not a
+  // tool name plus a separately-flagged subcommand).
   {
     id: 'container-prune',
-    re: /\bdocker\s+(system\s+prune|volume\s+rm)\b/,
+    re: /\bdocker\b[^;&|]*\b(system\s+prune|volume\s+rm)\b/,
     reasonKey: 'safety.container-prune',
     hard: false,
   },
+  // Round-2: `kubectl -n staging delete deployment x` slipped past
+  // `\bkubectl\s+delete\b` for the same reason as git-push/git-destructive
+  // above — `-n <namespace>` is completely ordinary kubectl usage, not an
+  // edge case.
   {
     id: 'k8s-delete',
-    re: /\bkubectl\s+delete\b/,
+    re: /\bkubectl\b[^;&|]*\bdelete\b/,
     reasonKey: 'safety.k8s-delete',
     hard: false,
   },
+  // Not in the review's 16 leaks, but the same root cause applies equally:
+  // `terraform -chdir=infra apply` and `helm --kube-context prod upgrade`
+  // are both standard usage that the original `\bterraform\s+apply\b`-
+  // shaped regex would have missed. Fixed proactively rather than waiting
+  // for a third round to find it by example.
   {
     id: 'iac-apply',
-    re: /\b(terraform\s+(apply|destroy)|helm\s+(upgrade|delete|uninstall))\b/,
+    re: /\b(terraform\b[^;&|]*\b(apply|destroy)|helm\b[^;&|]*\b(upgrade|delete|uninstall))\b/,
     reasonKey: 'safety.iac-apply',
     hard: false,
   },
+  // Same proactive fix as iac-apply above: `npm --registry=<url> publish`
+  // and `cargo +nightly publish` (a real, common way to pin a toolchain
+  // for one invocation) are ordinary usage the original adjacency-based
+  // regex would have missed. `gh`'s two-word subcommand (`release create`)
+  // is left adjacent for the same reason as container-prune's `system
+  // prune` / `volume rm`.
   {
     id: 'publish',
-    re: /\b(npm\s+publish|twine\s+upload|cargo\s+publish|gh\s+release\s+create)\b/,
+    re: /\b(npm\b[^;&|]*\bpublish|twine\b[^;&|]*\bupload|cargo\b[^;&|]*\bpublish|gh\b[^;&|]*\brelease\s+create)\b/,
     reasonKey: 'safety.publish',
     hard: false,
   },
+  // Round-2: only `sh` and `bash` were covered; `curl ... | zsh` and
+  // `curl ... | dash` both pipe a remote download into a real shell just
+  // as effectively and weren't matched. `zsh` = "z"+"sh", `dash` =
+  // "da"+"sh" (and, for the same free defense-in-depth, `ksh` = "k"+"sh",
+  // `fish` = "fi"+"sh") — generalized the optional prefix rather than
+  // listing full shell names, since they all end in the literal "sh" the
+  // rule already anchors on.
   {
     id: 'pipe-to-shell',
-    re: /(curl|wget)[^|]*\|\s*(sudo\s+)?(ba)?sh\b/,
+    re: /(curl|wget)[^|]*\|\s*(sudo\s+)?(ba|z|da|k|fi)?sh\b/,
     reasonKey: 'safety.pipe-to-shell',
     hard: false,
   },
@@ -161,6 +259,37 @@ export const DANGEROUS_PATTERNS = [
 // both cases.
 const EMPTY_PATTERN_ID = 'empty';
 const EMPTY_REASON_KEY = 'safety.empty';
+
+// Round-2 review, root cause 2: quoting and escaping defeat a literal-token
+// match without changing what actually runs. `"rm" -rf /`, `'rm' -rf /`,
+// and `r\m -rf /` all invoke the real `rm` binary — confirmed against a
+// real bash with a shadow `rm` on PATH — but none contain the literal
+// substring `rm ` (space-terminated) `destructive-rm`'s regex looks for,
+// because a quote or backslash character sits between the letters and the
+// whitespace. Stripping quote characters unconditionally is safe: shell
+// quoting doesn't change *which* command runs, only how its arguments are
+// tokenized, and this module only cares about the former.
+//
+// Backslash is subtler and is *not* stripped unconditionally, because
+// `\` means two different things depending on what follows it:
+//   - Before a non-whitespace character (`r\m`), it just removes that
+//     character's special meaning — the shell treats `\m` as a literal
+//     `m`, so `r\m` tokenizes as the two-character word `rm`. Stripping
+//     the backslash here reproduces exactly what the shell does.
+//   - Before whitespace (`rm\ -rf`), it does the opposite of nothing:
+//     it *prevents* that whitespace from being an argument separator, so
+//     `rm\ -rf` is a single word ("rm -rf", with a literal embedded
+//     space) followed by a second argument `/` — and no binary is named
+//     "rm -rf", so this is genuinely harmless (confirmed: bash reports
+//     "command not found"). Stripping the backslash here would be wrong:
+//     it would turn a harmless command into what looks like `rm -rf /`
+//     with `rm` and `-rf` as separate arguments, which is not what the
+//     shell actually does.
+// So only a backslash immediately followed by a non-whitespace character
+// is removed.
+function normalizeForMatching(cmd) {
+  return cmd.replace(/['"]/g, '').replace(/\\(?=\S)/g, '');
+}
 
 /**
  * Resolve any patternId `checkCommand` can ever return — including the
@@ -192,10 +321,17 @@ export function isHardRule(patternId) {
  *     X, but you explicitly allowed it" instead of the override silently
  *     erasing which rule was in play.
  *
- * `--allow` can only unblock a *soft* rule (`hard: false`). The three hard
- * rules — sudo, destructive-rm, disk-write — stay blocked even if an
- * `--allow` pattern matches the exact command: their failure mode is
- * irreversible, whole-machine damage (root escalation, an unrecoverable
+ * Matching runs against both `cmd` as given and a normalized copy (quotes
+ * and hiding-backslashes stripped — see `normalizeForMatching`), so a
+ * command that only matches after normalization is still blocked; the
+ * reported `patternId` is the same rule id either way, since which of the
+ * two strings tripped it isn't something a caller needs to act on
+ * differently.
+ *
+ * `--allow` can only unblock a *soft* rule (`hard: false`). The four hard
+ * rules — sudo, destructive-rm, find-delete, disk-write — stay blocked
+ * even if an `--allow` pattern matches the exact command: their failure
+ * mode is irreversible, whole-machine damage (root escalation, an unrecoverable
  * delete, a wiped disk or a locked-out account), a class of risk this
  * module's whole premise is that no single CLI flag typed ahead of time —
  * possibly written broadly, possibly matching more than the one command the
@@ -216,7 +352,8 @@ export function checkCommand(cmd, allowPatterns = []) {
     return { blocked: true, patternId: EMPTY_PATTERN_ID, overriddenBy: null };
   }
 
-  const hit = DANGEROUS_PATTERNS.find((p) => p.re.test(cmd));
+  const hit = DANGEROUS_PATTERNS.find((p) => p.re.test(cmd))
+    ?? DANGEROUS_PATTERNS.find((p) => p.re.test(normalizeForMatching(cmd)));
   if (!hit) return { blocked: false, patternId: null, overriddenBy: null };
 
   const allowed = allowPatterns.some((re) => re.test(cmd));

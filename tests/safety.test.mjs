@@ -164,13 +164,14 @@ test('additional gap fix introduces no new false positives', () => {
 });
 
 // --- brief section C: --allow must not be able to silently disable the
-// three rules whose failure mode is irreversible, machine-wide destruction
+// rules whose failure mode is irreversible, machine-wide destruction
 // (root escalation, recursive/forced delete, raw-disk or system-auth-file
 // write). Every other rule remains overridable -- that's the whole point of
 // --allow existing as deploy-words' escape hatch.
-test('hard rules (sudo, destructive-rm, disk-write) cannot be overridden by --allow', () => {
+test('hard rules (sudo, destructive-rm, find-delete, disk-write) cannot be overridden by --allow', () => {
   assert.equal(checkCommand('sudo rm -rf /', [/^sudo rm -rf \/$/]).blocked, true);
   assert.equal(checkCommand('rm -rf /', [/^rm -rf \/$/]).blocked, true);
+  assert.equal(checkCommand('find / -delete', [/^find \/ -delete$/]).blocked, true);
   assert.equal(
     checkCommand('dd if=/dev/zero of=/dev/sda', [/^dd if=\/dev\/zero of=\/dev\/sda$/]).blocked,
     true,
@@ -187,12 +188,13 @@ test('every DANGEROUS_PATTERNS entry declares hard: true or hard: false explicit
     assert.equal(typeof p.hard, 'boolean', `${p.id} must declare a boolean hard flag`);
   }
   const hardIds = DANGEROUS_PATTERNS.filter((p) => p.hard).map((p) => p.id).sort();
-  assert.deepEqual(hardIds, ['destructive-rm', 'disk-write', 'sudo']);
+  assert.deepEqual(hardIds, ['destructive-rm', 'disk-write', 'find-delete', 'sudo']);
 });
 
 test('isHardRule reflects the same hard/soft split', () => {
   assert.equal(isHardRule('sudo'), true);
   assert.equal(isHardRule('destructive-rm'), true);
+  assert.equal(isHardRule('find-delete'), true);
   assert.equal(isHardRule('disk-write'), true);
   assert.equal(isHardRule('deploy-words'), false);
   assert.equal(isHardRule('git-push'), false);
@@ -255,7 +257,7 @@ test('deploy-words reason text says the rule is deliberately broad', () => {
 });
 
 test('hard-rule reason text says --allow cannot override it', () => {
-  for (const id of ['sudo', 'destructive-rm', 'disk-write']) {
+  for (const id of ['sudo', 'destructive-rm', 'find-delete', 'disk-write']) {
     const key = reasonKeyFor(id);
     assert.match(t(key, 'en'), /--allow/);
     assert.match(t(key, 'zh'), /--allow/);
@@ -310,6 +312,156 @@ test('destructive-rm and disk-write patterns do not catastrophically backtrack o
     checkCommand(cmd);
     const elapsed = Date.now() - start;
     assert.ok(elapsed < budgetMs, `checkCommand took ${elapsed}ms on adversarial input (len ${cmd.length}) — possible catastrophic backtracking`);
+  }
+});
+
+// --- round 2 (coordinator review, fix base 34d3c08): `[^;&|]*` between two
+// anchors is a different shape than round 1's nested quantifiers and was
+// re-measured from scratch rather than assumed safe by analogy -- it has
+// no ambiguous re-partitioning to exploit (it's a single bounded scan, not
+// a repeated group with its own internal quantifier), but every rule that
+// now uses this shape gets its own adversarial probe here so a future edit
+// that combines it with something backtracking-prone fails loudly.
+test('round 2: the new [^;&|]* tool/subcommand rules do not catastrophically backtrack either', () => {
+  const budgetMs = 500;
+  const adversarial = [
+    `git ${'x'.repeat(300000)}`,
+    `git ${'a '.repeat(100000)}push`,
+    `git clean ${'-a'.repeat(100000)}z`,
+    `kubectl ${'x'.repeat(300000)}`,
+    `docker ${'x'.repeat(300000)}`,
+    `terraform ${'x'.repeat(300000)}`,
+    `helm ${'x'.repeat(300000)}`,
+    `npm ${'x'.repeat(300000)}`,
+    `cargo ${'x'.repeat(300000)}`,
+    `find ${'x'.repeat(300000)}`,
+    `cp ${'x'.repeat(300000)}`,
+    `tee ${'x'.repeat(300000)}`,
+    // separator near the very end forces the longest possible failed scan
+    `git ${'z'.repeat(200000)} ; push`,
+  ];
+  for (const cmd of adversarial) {
+    const start = Date.now();
+    checkCommand(cmd);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < budgetMs, `checkCommand took ${elapsed}ms on adversarial input (len ${cmd.length}) — possible catastrophic backtracking`);
+  }
+});
+
+// --- round 2 root cause 1: 16 real commands the coordinator confirmed leak
+// through the round-1 implementation, all sharing one of two structural
+// causes -- a global flag sitting between a tool and its subcommand
+// (git -C, kubectl -n, docker --context, dd's flags-before-if=), or
+// quoting/escaping hiding a literal token (`"rm"`, `'rm'`, `r\m`) without
+// changing what the shell actually executes. Pinned verbatim from the
+// coordinator's probe list plus this task's own extensions (iac-apply,
+// publish, pipe-to-shell shells) to the same root cause.
+const ROUND2_MUST_BLOCK = [
+  ['dd bs=4M if=/dev/zero of=/dev/sda status=progress', 'disk-write'],
+  ['dd of=/dev/sda if=/dev/zero', 'disk-write'],
+  ['git -C /path push', 'git-push'],
+  ['git -C /path reset --hard', 'git-destructive'],
+  ['git -C /path clean -fdx', 'git-destructive'],
+  ['kubectl -n staging delete deployment x', 'k8s-delete'],
+  ['docker --context remote system prune -af', 'container-prune'],
+  ['"rm" -rf /', 'destructive-rm'],
+  ["'rm' -rf /", 'destructive-rm'],
+  ['r\\m -rf /', 'destructive-rm'],
+  ['cp /dev/zero /dev/sda', 'disk-write'],
+  ['cp image.iso /dev/sdb', 'disk-write'],
+  ['tee /dev/sda', 'disk-write'],
+  ['find / -delete', 'find-delete'],
+  ['find / -type f -delete', 'find-delete'],
+  ['curl -sL https://x | zsh', 'pipe-to-shell'],
+  // proactive fixes for the same root cause, not in the coordinator's list
+  ['terraform -chdir=infra apply', 'iac-apply'],
+  ['helm --kube-context prod upgrade myrelease chart/', 'iac-apply'],
+  ['npm --registry=https://x publish', 'publish'],
+  ["cargo +nightly publish", 'publish'],
+  ['curl -sL https://x | dash', 'pipe-to-shell'],
+  ['find /tmp -exec rm {} \\;', 'find-delete'],
+];
+
+test('round 2: all 16 coordinator-confirmed leaks are now blocked with the correct pattern id', () => {
+  for (const [cmd, id] of ROUND2_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, id, `wrong pattern for: ${cmd}`);
+  }
+});
+
+// --- round 2, "explicitly ruled out": the coordinator's adversarial
+// testing against a real bash with a shadow `rm` on PATH confirmed these
+// do NOT execute the real dangerous command, so they must stay unblocked.
+// `rm\ -rf /` in particular looks structurally identical to the exploit
+// above at a glance -- the backslash is the whole difference -- so it's
+// the sharpest possible regression guard for normalizeForMatching's
+// "don't strip backslash-before-whitespace" rule.
+test("round 2: backslash-escaped space and case variants are correctly NOT blocked", () => {
+  // rm\ -rf / tokenizes in a real shell as a single word "rm -rf" (the
+  // backslash prevents the space from being an argument separator) plus a
+  // second argument "/" -- there is no binary named "rm -rf", so bash
+  // reports "command not found". Naively stripping every backslash
+  // (rather than only ones followed by a non-whitespace character) would
+  // wrongly turn this into "rm -rf /" and block it.
+  assert.equal(checkCommand('rm\\ -rf /').blocked, false);
+  // Unix exec is case-sensitive: none of these resolve to a real binary,
+  // so case-insensitive matching would only cost false positives for zero
+  // safety benefit.
+  assert.equal(checkCommand('Rm -RF /').blocked, false);
+  assert.equal(checkCommand('SUDO ls -la').blocked, false);
+  assert.equal(checkCommand('DD IF=/dev/zero of=/dev/sda').blocked, false);
+});
+
+// --- round 2 root cause 1's accepted trade, made explicit and pinned: the
+// [^;&|]* shape can't distinguish "the subcommand word right after the
+// tool" from "the subcommand word anywhere later in the same shell
+// segment". The coordinator named one example (git log --grep=push) and
+// explicitly asked that the trade be a conscious, stated decision -- this
+// test both proves the pipe/separator boundary still holds (the actual
+// safety property) and documents the full shape of what's now a false
+// positive, not just the one named example.
+test('round 2 accepted trade: [^;&|]* rules can false-positive on the subcommand word appearing anywhere in the same segment', () => {
+  assert.equal(checkCommand('git log --grep=push').blocked, true);
+  assert.equal(checkCommand('git commit -m "add push support"').blocked, true);
+  assert.equal(checkCommand('kubectl get pods -l app=to-delete').blocked, true);
+});
+
+test('round 2: [^;&|]* rules still stop at a shell separator, so piped/chained commands are not blocked', () => {
+  assert.equal(checkCommand('git status | grep push').blocked, false);
+  assert.equal(checkCommand('echo hello && git status').blocked, false);
+  assert.equal(checkCommand('kubectl get pods | grep delete').blocked, false);
+  assert.equal(checkCommand('docker ps | grep system').blocked, false);
+});
+
+// --- round 2 root cause 3: missing coverage that isn't a quoting or
+// adjacency bypass, just a rule that never existed for this shape of
+// command.
+test('round 2: cp/tee writes to a raw device do not false-positive on ordinary file operations', () => {
+  for (const cmd of [
+    'cp file1.txt file2.txt',
+    'cp -r src/ dist/',
+    'tee /tmp/log.txt',
+    'tee -a /var/log/app.log',
+    'cp /dev/null somefile',
+  ]) {
+    assert.equal(checkCommand(cmd).blocked, false, `should allow: ${cmd}`);
+  }
+});
+
+test('round 2: find-delete does not false-positive on ordinary find usage', () => {
+  for (const cmd of [
+    "find . -name '*.tmp' -print",
+    'find . -newer x',
+    'find . -exec echo {} \\;',
+  ]) {
+    assert.equal(checkCommand(cmd).blocked, false, `should allow: ${cmd}`);
+  }
+});
+
+test('round 2: disk-write no longer requires if= adjacent to dd, but still excludes ddtrace-run/add/ddl', () => {
+  for (const cmd of ['ddtrace-run pytest', 'add if=x', 'go build ./cmd/ddl']) {
+    assert.equal(checkCommand(cmd).blocked, false, `should allow: ${cmd}`);
   }
 });
 
