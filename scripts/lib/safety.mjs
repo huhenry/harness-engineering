@@ -20,27 +20,86 @@
  *      <ns> delete`, `docker --context <ctx> system prune`, and
  *      `dd bs=4M if=...` are standard everyday usage, not obfuscation — a
  *      global flag between the tool and its subcommand is completely
- *      ordinary. Every rule of this shape now uses `\bTOOL\b[^;&|]*\b...`
- *      instead: the gap between tool and subcommand can be anything except
- *      a shell separator (`;`, `&`, `|`), so the match still can't cross
- *      into a different piped/chained command (`git status | grep push`
- *      stays unblocked). This *does* introduce new false positives — the
- *      subcommand word can now appear anywhere in the same shell segment,
- *      including inside an unrelated flag value or a quoted commit message
- *      (`git log --grep=push`, `git commit -m "add push support"`) — which
- *      is a consciously accepted trade (one `--allow` flag vs. a missed
- *      force-push), not a side effect. See task-16-report.md's round-2
- *      section for the full list of rules this applies to and why.
+ *      ordinary.
  *   2. Quoting and backslash-escaping defeat a literal-token match without
  *      changing what the shell actually runs: `"rm" -rf /`, `'rm' -rf /`,
- *      and `r\m -rf /` all invoke the real `rm` binary, but none of them
- *      contain the literal substring `rm ` (space-terminated) the old
- *      regex needed. `normalizeForMatching` below strips exactly the
- *      characters that hide a token this way while leaving shell semantics
- *      that matter (like backslash-space, which prevents a space from
- *      being an argument separator) alone; `checkCommand` matches against
- *      both the raw and the normalized string.
+ *      and `r\m -rf /` all invoke the real `rm` binary.
+ *
+ * Round 2 fixed both with a character class (`[^;&|]*` for the gap between
+ * tool and subcommand) plus a lossy quote/backslash-stripping pre-pass
+ * (`normalizeForMatching`). Third adversarial review round (fix base
+ * 96f6505) found that fix itself had two further Critical problems:
+ *
+ *   A. A character class has no concept of quote state, so a separator
+ *      character *inside quotes* still stopped the scan even though the
+ *      shell treats it as ordinary argument content, not a boundary:
+ *      `git -C ";" push origin main` is one real invocation (`-C`'s
+ *      argument is the literal string ";"), but `[^;&|]*` can't cross the
+ *      quoted `;` to reach `push`. `normalizeForMatching` didn't rescue
+ *      this either — it stripped the quote *characters* but left the
+ *      separator they were hiding fully intact.
+ *   B. `[^;&|]*` between two anchors is evaluated once per candidate start
+ *      position for the first anchor (`.test()` searches the whole
+ *      string), and each attempt that fails re-scans up to the rest of the
+ *      string looking for the second anchor. A string with O(n) occurrences
+ *      of the first anchor and the second anchor never present — e.g.
+ *      `'git '.repeat(n) + 'x'` — is therefore O(n) attempts × O(n) scan
+ *      each = O(n²). Measured (this round, matching the coordinator's
+ *      finding independently): 1000 reps ≈ 11ms, 2000 ≈ 42ms, 4000 ≈
+ *      152ms, 8000 ≈ 612ms, 16000 ≈ 2.4s, 32000 ≈ 9.7s — textbook
+ *      quadratic. Round 2's own backtracking test used a *different*
+ *      adversarial shape (long filler plus one real occurrence, not many
+ *      restart points with no resolution), which is why it stayed green
+ *      while this was live — it measured the shape already fixed, not the
+ *      shape that hurts.
+ *
+ * Both are fixed by replacing character-class-based scanning with an
+ * actual quote-aware linear scan (`splitIntoCanonicalSegments`, below) plus
+ * a hard length cap (`MAX_COMMAND_LENGTH`):
+ *
+ *   - Segmenting on `;`, `&`, `|`, and newline *only when they occur
+ *     outside any quote* fixes (A): a quoted separator is no longer a
+ *     boundary, so the rules correctly see the whole real invocation.
+ *   - Segmenting alone does not fix (B): a pathological input with no real
+ *     separator anywhere still produces exactly one segment as long as the
+ *     whole input, and every tool/subcommand rule is still vulnerable to
+ *     restart-point blowup *within* that one segment. There is no regex
+ *     shape that fixes this for arbitrary adversarial input — bounding the
+ *     regex engine's worst case is not a promise a regex-based rule can
+ *     make. So `checkCommand` instead refuses to analyze anything over
+ *     `MAX_COMMAND_LENGTH` at all: an O(1) length check replaces an
+ *     unbounded regex pass, and a `harness.config.json`-declared
+ *     verification command that's actually over 2048 characters is
+ *     pathological by this project's own model of what a "canonical
+ *     command" is (see the `too-long` pattern below).
+ *
+ * The same quote-aware scan also does better than round 2's lossy
+ * stripping for one more thing: `normalizeForMatching` had no way to tell
+ * "a quoted single word used *as* the command name" (`"rm" -rf /`) apart
+ * from "one multi-word quoted *argument* that happens to contain a
+ * dangerous-looking substring" (`echo "don't rm -rf things"`, `grep 'git
+ * push' log.txt`) — both dequoted to the same flat text. `
+ * splitIntoCanonicalSegments` keeps that distinction by replacing internal
+ * whitespace *within* a quoted region with `_` instead of a real space:
+ * `"don't rm -rf things"` becomes `don't_rm_-rf_things`, one fused
+ * underscore-joined blob in which `rm` is no longer a `\b`-bounded word
+ * (its neighbor is `_`, a `\w` character) and is no longer followed by
+ * real whitespace (`\s+`-based rules need actual whitespace, and there is
+ * none left inside the fused blob). A single unquoted word used as a
+ * command name (`"rm" -rf /`) has no internal whitespace to fuse, so it
+ * still dequotes cleanly to a real, matchable token.
  */
+
+// A `harness.config.json`-declared verification command is meant to be a
+// short, canonical, single-purpose invocation ("npm test", "go build
+// ./..."), not an embedded multi-KB script — so this is a generous cap,
+// not a tight one. Chosen and verified empirically (see task-16-report.md's
+// round-3 section) against the actual restart-point-heavy adversarial
+// shape across every tool/subcommand rule below: worst case at this length
+// is ~3ms, comfortably under any threshold that would matter, with orders
+// of magnitude of headroom before the quadratic curve above becomes
+// noticeable at all.
+const MAX_COMMAND_LENGTH = 2048;
 
 // Every pattern below is written to avoid a specific class of bug: a
 // trailing `\b` placed right after a quantified group whose match boundary
@@ -55,6 +114,14 @@
 // do the boundary work, or use a negative lookahead that names exactly
 // which continuation characters disqualify a match instead of relying on
 // `\b`'s coarser transition test.
+//
+// Every rule below is matched against each *segment* produced by
+// `splitIntoCanonicalSegments`, not the raw command string — see the
+// file-level comment for why. Within a segment there is by construction no
+// real (unquoted) `;`/`&`/`|`/newline left to exclude, so the gap between a
+// tool name and its subcommand is simply `[\s\S]*` (not `.*`, since a
+// quoted argument can legitimately contain a real embedded newline that a
+// plain `.` wouldn't match without the `s` flag).
 export const DANGEROUS_PATTERNS = [
   // sudo must be checked before destructive-rm: "sudo rm -r x" is expected
   // (by this module's own tests, and by Task 18's contract) to report
@@ -62,7 +129,11 @@ export const DANGEROUS_PATTERNS = [
   // which id gets reported when a command matches more than one pattern.
   // sudo is also the most fundamental hard rule: escalating to root doesn't
   // just do one dangerous thing, it removes every other permission check
-  // that would have stopped a *different* dangerous thing.
+  // that would have stopped a *different* dangerous thing. (This ordering
+  // also means `curl ... | sudo sh` reports 'sudo', not 'pipe-to-shell' —
+  // consistent with the same principle: the more severe, harder-to-recover
+  // classification wins when a command genuinely matches more than one
+  // rule.)
   {
     id: 'sudo',
     re: /\bsudo\b/,
@@ -70,19 +141,22 @@ export const DANGEROUS_PATTERNS = [
     hard: true,
   },
   // Originally `\brm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rf]` (plan's own regex,
-  // already correct for short flags). Extended here to also catch GNU
+  // already correct for short flags). Extended (round 1) to also catch GNU
   // long-form `--recursive`/`--force`, which are exactly as destructive as
   // `-r`/`-f` but were not matched at all by the short-flag-only version —
-  // `rm --recursive --force /` sailed straight through undetected
-  // (verified empirically before this fix; see task-16-report.md). The
-  // repeated prefix group now accepts either a short flag (`-[a-zA-Z]*`) or
-  // a long flag (`--[a-zA-Z][a-zA-Z-]*`) followed by whitespace, and the
+  // `rm --recursive --force /` sailed straight through undetected. The
+  // repeated prefix group accepts either a short flag (`-[a-zA-Z]*`) or a
+  // long flag (`--[a-zA-Z][a-zA-Z-]*`) followed by whitespace, and the
   // terminal alternative adds `--recursive`/`--force` alongside the
   // existing short-flag-ending-in-r-or-f case. The long-flag alternatives
   // use a negative lookahead `(?![a-zA-Z-])` rather than `\b`, because `\b`
   // would also hold at the hyphen in "--force-something-fake" (word 'e' to
   // non-word '-' is a boundary) and wrongly block an unrelated made-up
   // flag; the lookahead instead demands the flag name actually ends here.
+  // No `[\s\S]*`-shaped gap here (never needed one — `rm`'s own flags are
+  // adjacent to it by construction), so this rule was never vulnerable to
+  // either round-3 Critical; quoting bypasses (`"rm" -rf /`) are handled by
+  // segmentation dequoting the token, not by anything in this regex.
   {
     id: 'destructive-rm',
     re: /\brm\s+(?:(?:-[a-zA-Z]*|--[a-zA-Z][a-zA-Z-]*)\s+)*(?:-[a-zA-Z]*[rf]|--recursive(?![a-zA-Z-])|--force(?![a-zA-Z-]))/,
@@ -95,13 +169,10 @@ export const DANGEROUS_PATTERNS = [
   // don't involve a bare `rm` invocation at all, so nothing above would
   // ever catch `find / -delete`. Same severity class as destructive-rm
   // (a loose search path deletes an entire subtree in one command, no
-  // undo), hence `hard: true`. Uses the same `\bTOOL\b[^;&|]*\b...` shape
-  // as the round-2 tool/subcommand fixes below, since `find`'s dangerous
-  // flag is just as commonly separated from `find` itself by a path and
-  // other predicates (`find / -type f -delete`).
+  // undo), hence `hard: true`.
   {
     id: 'find-delete',
-    re: /\bfind\b[^;&|]*(-delete\b|-exec\s+rm\b)/,
+    re: /\bfind\b[\s\S]*(-delete\b|-exec\s+rm\b)/,
     reasonKey: 'safety.find-delete',
     hard: true,
   },
@@ -114,7 +185,7 @@ export const DANGEROUS_PATTERNS = [
   //    ordinary way to write a `dd` invocation — flags before `if=` are
   //    ubiquitous) and `dd of=/dev/sda if=/dev/zero` (if= present but not
   //    first) both slipped through. Rather than loosening to
-  //    `\bdd\b[^;&|]*\bif=` (which would still miss `dd of=/dev/sda` with
+  //    `\bdd\b[\s\S]*\bif=` (which would still miss `dd of=/dev/sda` with
   //    no `if=` at all, e.g. reading from stdin via
   //    `cat image.img | dd of=/dev/sda`), this drops the `if=` requirement
   //    entirely: bare `\bdd\b`. There is no legitimate use of a shell
@@ -125,7 +196,7 @@ export const DANGEROUS_PATTERNS = [
   //    `ddtrace-run`, `add if=x`, and `./cmd/ddl` (checked below).
   //  - Writing to a raw block device via `cp` or `tee` instead of `dd`/`>`
   //    wasn't covered at all (`cp /dev/zero /dev/sda`, `cp image.iso
-  //    /dev/sdb`, `tee /dev/sda`). Added `\b(cp|tee)\b[^;&|]*\/dev\/(sd|
+  //    /dev/sdb`, `tee /dev/sda`). Added `\b(cp|tee)\b[\s\S]*\/dev\/(sd|
   //    nvme|disk)` — deliberately doesn't distinguish source vs.
   //    destination position (cp's destination is usually, but not always
   //    provably from a regex, the last argument), so `cp /dev/sda
@@ -134,7 +205,7 @@ export const DANGEROUS_PATTERNS = [
   //    device are unusual enough to warrant a human look too.
   {
     id: 'disk-write',
-    re: /\bmkfs\b|\bdd\b|>\s*\/dev\/(sd|nvme|disk)|>\s*\/etc\/(passwd|shadow|sudoers)(?![\w.-])|\b(cp|tee)\b[^;&|]*\/dev\/(sd|nvme|disk)/,
+    re: /\bmkfs\b|\bdd\b|>\s*\/dev\/(sd|nvme|disk)|>\s*\/etc\/(passwd|shadow|sudoers)(?![\w.-])|\b(cp|tee)\b[\s\S]*\/dev\/(sd|nvme|disk)/,
     reasonKey: 'safety.disk-write',
     hard: true,
   },
@@ -147,15 +218,17 @@ export const DANGEROUS_PATTERNS = [
   // Round-2: `\bgit\s+push\b` required `push` immediately after `git`, so
   // `git -C /path push` (an everyday way to run git against a repo that
   // isn't the cwd) walked straight through. Loosened to
-  // `\bgit\b[^;&|]*\bpush\b` — see the file-level comment for the accepted
+  // `\bgit\b[\s\S]*\bpush\b` — see the file-level comment for the accepted
   // false-positive trade this shape carries (the word "push" can now
-  // appear anywhere in the same git invocation before a shell separator,
-  // including a commit message: `git commit -m "add push support"` now
-  // also blocks). `[^;&|]*` can never cross `;`, `&`, or `|`, so
-  // `git status | grep push` still doesn't block.
+  // appear anywhere in the same segment, including inside an unrelated
+  // flag value: `git log --grep=push` still blocks, and that's accepted —
+  // but *not* inside a quoted multi-word argument any more: `git commit -m
+  // "add push support"` no longer blocks, because segmentation fuses that
+  // argument's internal whitespace and "push" stops being a `\b`-bounded
+  // word — see the file-level comment's closing paragraph).
   {
     id: 'git-push',
-    re: /\bgit\b[^;&|]*\bpush\b/,
+    re: /\bgit\b[\s\S]*\bpush\b/,
     reasonKey: 'safety.git-push',
     hard: false,
   },
@@ -175,7 +248,7 @@ export const DANGEROUS_PATTERNS = [
   // part of the review's 16 leaks, but the identical bug class.
   {
     id: 'git-destructive',
-    re: /\bgit\b[^;&|]*\b(reset\s+--hard\b|clean\s+(?:-[a-zA-Z]*[fd]|--force(?![a-zA-Z-]))|filter-branch\b)/,
+    re: /\bgit\b[\s\S]*\b(reset\s+--hard\b|clean\s+(?:-[a-zA-Z]*[fd]|--force(?![a-zA-Z-]))|filter-branch\b)/,
     reasonKey: 'safety.git-destructive',
     hard: false,
   },
@@ -187,7 +260,7 @@ export const DANGEROUS_PATTERNS = [
   // tool name plus a separately-flagged subcommand).
   {
     id: 'container-prune',
-    re: /\bdocker\b[^;&|]*\b(system\s+prune|volume\s+rm)\b/,
+    re: /\bdocker\b[\s\S]*\b(system\s+prune|volume\s+rm)\b/,
     reasonKey: 'safety.container-prune',
     hard: false,
   },
@@ -197,18 +270,18 @@ export const DANGEROUS_PATTERNS = [
   // edge case.
   {
     id: 'k8s-delete',
-    re: /\bkubectl\b[^;&|]*\bdelete\b/,
+    re: /\bkubectl\b[\s\S]*\bdelete\b/,
     reasonKey: 'safety.k8s-delete',
     hard: false,
   },
-  // Not in the review's 16 leaks, but the same root cause applies equally:
+  // Not in round 2's 16 leaks, but the same root cause applies equally:
   // `terraform -chdir=infra apply` and `helm --kube-context prod upgrade`
   // are both standard usage that the original `\bterraform\s+apply\b`-
   // shaped regex would have missed. Fixed proactively rather than waiting
-  // for a third round to find it by example.
+  // for another round to find it by example.
   {
     id: 'iac-apply',
-    re: /\b(terraform\b[^;&|]*\b(apply|destroy)|helm\b[^;&|]*\b(upgrade|delete|uninstall))\b/,
+    re: /\b(terraform\b[\s\S]*\b(apply|destroy)|helm\b[\s\S]*\b(upgrade|delete|uninstall))\b/,
     reasonKey: 'safety.iac-apply',
     hard: false,
   },
@@ -220,7 +293,7 @@ export const DANGEROUS_PATTERNS = [
   // prune` / `volume rm`.
   {
     id: 'publish',
-    re: /\b(npm\b[^;&|]*\bpublish|twine\b[^;&|]*\bupload|cargo\b[^;&|]*\bpublish|gh\b[^;&|]*\brelease\s+create)\b/,
+    re: /\b(npm\b[\s\S]*\bpublish|twine\b[\s\S]*\bupload|cargo\b[\s\S]*\bpublish|gh\b[\s\S]*\brelease\s+create)\b/,
     reasonKey: 'safety.publish',
     hard: false,
   },
@@ -231,6 +304,19 @@ export const DANGEROUS_PATTERNS = [
   // `fish` = "fi"+"sh") — generalized the optional prefix rather than
   // listing full shell names, since they all end in the literal "sh" the
   // rule already anchors on.
+  //
+  // Round 3: this `re` is kept for structural consistency (every pattern
+  // has one — see the "every pattern has a reason key" test) and as a
+  // human-readable summary of what this rule targets, but it is **not**
+  // what `checkCommand` actually tests against a segment. Unlike every
+  // other rule, "does a curl/wget segment feed via a real pipe into a
+  // shell segment" is a relationship *between* two segments, not a pattern
+  // within one — segmenting on `|` (needed so `git status | grep push`
+  // doesn't look like one blob to git-push) throws away the very
+  // adjacency this rule needs to see. So detection runs through
+  // `hasPipeToShell` instead, which walks segment-to-segment pipe chains
+  // directly (see below) rather than trying to express "the next segment
+  // in the chain" inside a single regex.
   {
     id: 'pipe-to-shell',
     re: /(curl|wget)[^|]*\|\s*(sudo\s+)?(ba|z|da|k|fi)?sh\b/,
@@ -240,9 +326,10 @@ export const DANGEROUS_PATTERNS = [
   // Deliberately the broadest rule in the list — see reasonKey text for the
   // full rationale (brief section D requires this to be stated explicitly
   // to the user, not just implied by the code). Kept last so a command that
-  // also matches a more specific rule (e.g. "npm publish" also containing
-  // "release" nowhere, but hypothetically "terraform apply for prod")
-  // reports the more actionable, specific id first.
+  // also matches a more specific rule (e.g. "terraform apply for prod",
+  // which also contains "prod") reports the more actionable, specific id
+  // first — pinned by its own ordering test, the same way sudo-before-
+  // destructive-rm is, so a future insert can't silently move it.
   {
     id: 'deploy-words',
     re: /\b(deploy|prod|production|release)\b/i,
@@ -251,59 +338,151 @@ export const DANGEROUS_PATTERNS = [
   },
 ];
 
-// Not part of DANGEROUS_PATTERNS: the empty-command case isn't a dangerous
-// *pattern* match (there is no command to run at all), so it doesn't belong
-// in the array the "pattern ids are unique / every pattern has a re"
-// invariant is checked against. It still needs a reason text a caller can
-// look up by patternId, which reasonKeyFor below provides uniformly for
-// both cases.
+// Not part of DANGEROUS_PATTERNS: neither the empty-command nor the
+// too-long-to-analyze case is a dangerous *pattern* match (there is either
+// nothing to run, or nothing this module will safely attempt to check), so
+// neither belongs in the array the "pattern ids are unique / every pattern
+// has a re" invariant is checked against. Both still need a reason text a
+// caller can look up by patternId, which reasonKeyFor below provides
+// uniformly across all three cases.
 const EMPTY_PATTERN_ID = 'empty';
 const EMPTY_REASON_KEY = 'safety.empty';
+const TOO_LONG_PATTERN_ID = 'too-long';
+const TOO_LONG_REASON_KEY = 'safety.too-long';
 
-// Round-2 review, root cause 2: quoting and escaping defeat a literal-token
-// match without changing what actually runs. `"rm" -rf /`, `'rm' -rf /`,
-// and `r\m -rf /` all invoke the real `rm` binary — confirmed against a
-// real bash with a shadow `rm` on PATH — but none contain the literal
-// substring `rm ` (space-terminated) `destructive-rm`'s regex looks for,
-// because a quote or backslash character sits between the letters and the
-// whitespace. Stripping quote characters unconditionally is safe: shell
-// quoting doesn't change *which* command runs, only how its arguments are
-// tokenized, and this module only cares about the former.
-//
-// Backslash is subtler and is *not* stripped unconditionally, because
-// `\` means two different things depending on what follows it:
-//   - Before a non-whitespace character (`r\m`), it just removes that
-//     character's special meaning — the shell treats `\m` as a literal
-//     `m`, so `r\m` tokenizes as the two-character word `rm`. Stripping
-//     the backslash here reproduces exactly what the shell does.
-//   - Before whitespace (`rm\ -rf`), it does the opposite of nothing:
-//     it *prevents* that whitespace from being an argument separator, so
-//     `rm\ -rf` is a single word ("rm -rf", with a literal embedded
-//     space) followed by a second argument `/` — and no binary is named
-//     "rm -rf", so this is genuinely harmless (confirmed: bash reports
-//     "command not found"). Stripping the backslash here would be wrong:
-//     it would turn a harmless command into what looks like `rm -rf /`
-//     with `rm` and `-rf` as separate arguments, which is not what the
-//     shell actually does.
-// So only a backslash immediately followed by a non-whitespace character
-// is removed.
-function normalizeForMatching(cmd) {
-  return cmd.replace(/['"]/g, '').replace(/\\(?=\S)/g, '');
+/**
+ * Quote-aware linear scan, used in place of both round 2's character-class
+ * gap (`[^;&|]*`) and its lossy `normalizeForMatching` pre-pass — see the
+ * file-level comment for why both were insufficient. Single pass, O(n),
+ * tracks quote state (none / single / double) and does three things at
+ * once:
+ *
+ *   1. Splits into segments on `;`, `&`, `|`, and newline, but *only* when
+ *      one occurs outside any quote — a quoted separator
+ *      (`git -C ";" push`) is ordinary argument content, not a boundary.
+ *      Each segment carries the real (unquoted) delimiter that ended it
+ *      (`;`, `&`, `|`, `\n`, or `null` for the last segment), since
+ *      `hasPipeToShell` below needs to know specifically which segments
+ *      are pipe-chained to which.
+ *   2. Drops quote delimiter characters themselves (they're syntax, not
+ *      argument content) and resolves a backslash the same way round 2's
+ *      `normalizeForMatching` did: before a non-whitespace character, drop
+ *      the backslash and keep the character (`r\m` -> `rm`, matching what
+ *      the shell does); before whitespace, keep the backslash as a
+ *      non-fusing barrier (`rm\ -rf` must not look like `rm -rf` with real
+ *      separating whitespace between `rm` and `-rf` — that specific
+ *      command is genuinely harmless: bash reports "command not found"
+ *      for a binary literally named "rm -rf").
+ *   3. Replaces whitespace *found while inside a quote* with `_` instead
+ *      of a real space. This is what lets a single quoted word used *as* a
+ *      token (`"rm" -rf /`) still dequote to a real, matchable `rm`, while
+ *      a multi-word quoted *argument* that happens to contain a
+ *      dangerous-looking substring (`echo "don't rm -rf things"`, `grep
+ *      'git push' log.txt`) instead becomes one fused, underscore-joined
+ *      blob (`don't_rm_-rf_things`) in which `rm`/`push` are no longer
+ *      `\b`-bounded words (their neighbor is `_`, a `\w` character) and are
+ *      no longer followed by real whitespace either. Backslash is *not*
+ *      treated specially inside single quotes (real shells give it no
+ *      escaping power there); inside double quotes it's resolved the same
+ *      way as unquoted, except a backslash-before-whitespace does not need
+ *      the same non-fusing-barrier treatment, because that whitespace was
+ *      already going to be fused to `_` regardless.
+ */
+function splitIntoCanonicalSegments(cmd) {
+  const segments = [];
+  let out = '';
+  let quote = null; // null | "'" | '"'
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote === "'") {
+      if (ch === "'") { quote = null; continue; }
+      out += /\s/.test(ch) ? '_' : ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '\\' && i + 1 < cmd.length) {
+        const next = cmd[++i];
+        out += /\s/.test(next) ? '_' : next;
+        continue;
+      }
+      if (ch === '"') { quote = null; continue; }
+      out += /\s/.test(ch) ? '_' : ch;
+      continue;
+    }
+    // Unquoted.
+    if (ch === '\\' && i + 1 < cmd.length) {
+      const next = cmd[i + 1];
+      if (/\s/.test(next)) {
+        // Preserve backslash-escaped whitespace as a non-separator,
+        // non-fusing barrier; do not consume `next` here, let the normal
+        // unquoted-whitespace path below emit it on the following
+        // iteration.
+        out += ch;
+        continue;
+      }
+      out += next;
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (ch === ';' || ch === '&' || ch === '|' || ch === '\n') {
+      segments.push({ text: out, delimiter: ch });
+      out = '';
+      continue;
+    }
+    out += ch;
+  }
+  segments.push({ text: out, delimiter: null });
+  return segments;
+}
+
+// A curl/wget-to-shell relationship is a property of *adjacent* pipe
+// segments, not of any single segment — see pipe-to-shell's comment above.
+// Walks every candidate starting segment (one that contains curl/wget and
+// is itself pipe-delimited), then follows the pipe chain forward through
+// any number of intermediate hops (`curl ... | tee out.sh | sh` still
+// ultimately feeds curl's output to a shell, even though the shell isn't
+// the *immediate* next segment) until it either finds a shell-starting
+// segment (hit) or the chain breaks on a non-`|` delimiter or the end of
+// the command (no hit through this starting point).
+function hasPipeToShell(segments) {
+  const shellStart = /^\s*(sudo\s+)?(ba|z|da|k|fi)?sh\b/;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].delimiter !== '|') continue;
+    if (!/\b(curl|wget)\b/.test(segments[i].text)) continue;
+    let j = i + 1;
+    while (j < segments.length) {
+      if (shellStart.test(segments[j].text)) return true;
+      if (segments[j].delimiter !== '|') break;
+      j++;
+    }
+  }
+  return false;
 }
 
 /**
  * Resolve any patternId `checkCommand` can ever return — including the
- * `'empty'` sentinel, which has no entry in `DANGEROUS_PATTERNS` — to its
- * i18n reason key. Returns null for an id that isn't recognized, rather
- * than throwing, so a caller can defensively check before calling `t()`.
+ * `'empty'` and `'too-long'` sentinels, neither of which has an entry in
+ * `DANGEROUS_PATTERNS` — to its i18n reason key. Returns null for an id
+ * that isn't recognized, rather than throwing, so a caller can defensively
+ * check before calling `t()`.
  */
 export function reasonKeyFor(patternId) {
   if (patternId === EMPTY_PATTERN_ID) return EMPTY_REASON_KEY;
+  if (patternId === TOO_LONG_PATTERN_ID) return TOO_LONG_REASON_KEY;
   return DANGEROUS_PATTERNS.find((p) => p.id === patternId)?.reasonKey ?? null;
 }
 
-/** Whether `--allow` is even eligible to override this rule. See checkCommand. */
+/**
+ * Whether `--allow` is even eligible to override this rule. See
+ * checkCommand. `'empty'` and `'too-long'` both report `true` here even
+ * though neither is a `DANGEROUS_PATTERNS` entry: `checkCommand` never
+ * even evaluates `allowPatterns` for either case (see below), so both are
+ * non-overridable in fact, and `isHardRule` should say so rather than
+ * defaulting an unrecognized id to `false`.
+ */
 export function isHardRule(patternId) {
+  if (patternId === EMPTY_PATTERN_ID || patternId === TOO_LONG_PATTERN_ID) return true;
   return DANGEROUS_PATTERNS.find((p) => p.id === patternId)?.hard === true;
 }
 
@@ -314,19 +493,27 @@ export function isHardRule(patternId) {
  * — see task-16-report.md section C for the full reasoning):
  *   - `blocked`: true iff the command must not run.
  *   - `patternId`: the id of the rule currently blocking it, or the
- *     `'empty'` sentinel for blank input; null whenever blocked is false.
+ *     `'empty'`/`'too-long'` sentinels for blank or oversized input; null
+ *     whenever blocked is false.
  *   - `overriddenBy`: the id of the rule that *would* have blocked this
  *     command had an `--allow` pattern not matched it; null otherwise. This
  *     is what lets Task 18's verify report "this would have been blocked by
  *     X, but you explicitly allowed it" instead of the override silently
  *     erasing which rule was in play.
  *
- * Matching runs against both `cmd` as given and a normalized copy (quotes
- * and hiding-backslashes stripped — see `normalizeForMatching`), so a
- * command that only matches after normalization is still blocked; the
- * reported `patternId` is the same rule id either way, since which of the
- * two strings tripped it isn't something a caller needs to act on
+ * Matching runs against every segment `splitIntoCanonicalSegments` produces
+ * (see its own comment for the full reasoning), not the raw command
+ * string; the reported `patternId` is the same rule id regardless of which
+ * segment tripped it, since that isn't something a caller needs to act on
  * differently.
+ *
+ * Commands over `MAX_COMMAND_LENGTH` are refused immediately, before any
+ * segmentation or pattern matching runs, as `'too-long'` — and, notably,
+ * before `allowPatterns` is evaluated too: the whole point of the length
+ * cap is that *no* regex, whether one of this module's own or a caller-
+ * supplied `--allow` pattern of unknown shape, should ever run against
+ * unbounded adversarial input, so `'too-long'` is not overridable (see
+ * `isHardRule`).
  *
  * `--allow` can only unblock a *soft* rule (`hard: false`). The four hard
  * rules — sudo, destructive-rm, find-delete, disk-write — stay blocked
@@ -351,9 +538,19 @@ export function checkCommand(cmd, allowPatterns = []) {
   if (typeof cmd !== 'string' || cmd.trim() === '') {
     return { blocked: true, patternId: EMPTY_PATTERN_ID, overriddenBy: null };
   }
+  if (cmd.length > MAX_COMMAND_LENGTH) {
+    return { blocked: true, patternId: TOO_LONG_PATTERN_ID, overriddenBy: null };
+  }
 
-  const hit = DANGEROUS_PATTERNS.find((p) => p.re.test(cmd))
-    ?? DANGEROUS_PATTERNS.find((p) => p.re.test(normalizeForMatching(cmd)));
+  const segments = splitIntoCanonicalSegments(cmd);
+  let hit = null;
+  for (const p of DANGEROUS_PATTERNS) {
+    if (p.id === 'pipe-to-shell') {
+      if (hasPipeToShell(segments)) { hit = p; break; }
+      continue;
+    }
+    if (segments.some((seg) => p.re.test(seg.text))) { hit = p; break; }
+  }
   if (!hit) return { blocked: false, patternId: null, overriddenBy: null };
 
   const allowed = allowPatterns.some((re) => re.test(cmd));
