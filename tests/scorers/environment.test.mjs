@@ -64,6 +64,35 @@ test('flags bootstrap-fails only when evidence shows a failure', () => {
   assert.ok(r.score < 4);
 });
 
+// A recorded entry is not the same thing as an executed one. `blocked` means
+// this tool's own safety blocklist refused to run the command; `planned`
+// means dry-run never ran anything. Neither observed a failure, so neither
+// may produce a failure gap — the same "absent evidence != negative
+// evidence" contract the test above depends on, applied to the two statuses
+// that were previously indistinguishable from a real failure here.
+//
+// Measured before the fix: blocked, planned, timeout and failed ALL produced
+// environment.bootstrap-fails identically, so a repo whose bootstrap command
+// we refused to execute was told its bootstrap fails. Found while verifying
+// Task 18, which had just fixed the identical bug one file over in
+// feedback.mjs; both now derive from verify-status.mjs's isExecutedStatus
+// rather than each deciding for itself what counts as evidence.
+for (const status of ['blocked', 'planned']) {
+  test(`treats a ${status} bootstrap command as no evidence, not as a failure`, () => {
+    const report = { commands: [{ role: 'bootstrap', command: './init.sh', status }] };
+    const r = score(input({ files: FULL_ENV, verifyReport: report }));
+    assert.ok(
+      !r.gapIds.includes('environment.bootstrap-fails'),
+      `a ${status} command was never executed — claiming it failed asserts an observation nobody made`,
+    );
+    // Same posture as the no-report case above: capped at 3, and capped
+    // *because* evidence is missing — not because some other rung-4
+    // condition is genuinely unmet.
+    assert.equal(r.score, 3);
+    assert.equal(r.cappedByEvidence, true);
+  });
+}
+
 // --- full rung 0-4 coverage ---
 
 test('scores 0 with no gap when no stack is detected at all', () => {

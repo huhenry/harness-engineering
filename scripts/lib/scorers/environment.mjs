@@ -1,5 +1,6 @@
 import { ladder } from './ladder.mjs';
 import { signatureFor } from '../stack.mjs';
+import { isExecutedStatus } from '../verify-status.mjs';
 
 export const id = 'environment';
 
@@ -62,8 +63,19 @@ export function score({ ctx, stack, config, verifyReport }) {
 
   const bootstrapCmd = bootstrapCommandFrom(verifyReport);
   // "Verified" means we have actual evidence to judge, one way or the other
-  // — a supplied verifyReport that recorded a bootstrap-role command run.
-  const verified = verifyReport != null && bootstrapCmd !== null;
+  // — a supplied verifyReport that recorded a bootstrap-role command being
+  // ACTUALLY RUN. The presence of an entry is not enough, and the difference
+  // is the same contract violation Task 18 fixed in feedback.mjs: `blocked`
+  // and `planned` entries are recorded in the report too, and neither was
+  // ever spawned. Measured before this fix: a bootstrap command in any of
+  // blocked/planned/timeout/failed produced `environment.bootstrap-fails`
+  // identically — so a repo whose bootstrap command this tool's own safety
+  // blocklist refused to execute was told its bootstrap FAILS. Deriving
+  // from the shared `isExecutedStatus` rather than re-deriving the notion
+  // here is the point: feedback.mjs and this file must not each carry their
+  // own idea of what counts as evidence (see verify-status.mjs's header on
+  // this project's four prior hand-synced-list bugs).
+  const verified = verifyReport != null && bootstrapCmd !== null && isExecutedStatus(bootstrapCmd.status);
   const bootstrapPassed = verified && bootstrapCmd.status === 'passed';
 
   const { score, gapIds: ladderGaps } = ladder([
