@@ -173,6 +173,34 @@ export const MESSAGES = {
     'safety.deploy-words': 'This rule is deliberately broad: it fires on the bare words "deploy", "prod", "production", or "release" appearing anywhere in the command, including harmless false positives like a script called `release.sh`. That is intentional — missing a real deployment is worse than one extra confirmation. Override with `--allow` and a pattern matching only this command, once you have confirmed it is safe.',
     'safety.empty': 'The command string is empty or whitespace-only, so there is nothing to run — this points at a broken or missing declaration, not a real command. Fix whatever produced the empty string; there is no dangerous pattern here for `--allow` to override.',
 
+    // --- verify.mjs (task 18): CLI report copy ---
+    'verify.title': 'Verify Report',
+    'verify.mode.dryRun': 'Mode: dry-run — nothing below was actually executed.',
+    'verify.mode.run': 'Mode: run — the commands below were actually executed.',
+    'verify.result.passed': 'Result: PASSED',
+    'verify.result.failed': 'Result: FAILED',
+    'verify.commands.heading': 'Commands',
+    'verify.col.role': 'Role',
+    'verify.col.command': 'Command',
+    'verify.col.status': 'Status',
+    'verify.status.planned': 'planned (dry-run — not executed)',
+    'verify.status.blocked': 'blocked (refused before execution)',
+    'verify.status.passed': 'passed',
+    'verify.status.failed': 'failed',
+    'verify.status.timeout': 'timeout',
+    'verify.blocked.heading': 'Blocked commands',
+    // Task-18-brief.md section B3: checkCommand's `overriddenBy` tells the
+    // caller "this would have been blocked by rule X, but your --allow
+    // pattern let it through" — the whole point of Task 16 returning that
+    // field at all. This heading and the warning below make sure that
+    // information survives into the human-readable report as something a
+    // user would actually notice, not a footnote next to a normal pass.
+    'verify.overridden.heading': 'Commands you explicitly allowed past a safety rule',
+    'verify.overridden.warning': '`{role}` (`{command}`) would have been blocked by the `{rule}` rule — you explicitly allowed it with --allow, so it ran at your own informed risk.',
+    'verify.noCommands.note': 'This repository has no verification commands declared at all. This is not the same as "verified" — there is simply nothing here that could have failed. Add commands under `verify` in harness.config.json and run again.',
+    'verify.runHint': 'This was a dry run — nothing above was actually executed. Re-run with --run to actually execute these commands.',
+    'verify.reportWritten': 'Evidence written to {path}',
+
     // --- gap catalogue: loop ---
     'gap.loop.none.title': 'No agentic loop defined',
     'gap.loop.none.why': "Without a defined loop pattern, agent sessions run ad hoc — there's no structure for how work gets proposed, checked or repeated.",
@@ -356,6 +384,32 @@ export const MESSAGES = {
     'safety.unresolved-binary': '这条命令要运行的程序名来自 shell 展开（`$(...)`、反引号替换，或者 `$VAR`/`${VAR}` 变量引用），不是写死的名字，这个模块没法知道实际会跑什么——跟拦截 shell 间接执行是同一个道理：看不见的东西不去猜，不代表结果就一定危险。等你确认了这个展开实际会解析成什么、确认安全之后，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.deploy-words': '这条规则是故意写宽的：只要命令里出现"deploy"、"prod"、"production"或"release"这几个词就会触发，哪怕只是脚本名叫 `release.sh` 这种无害的误伤也一样。这是有意为之——漏掉一次真正的部署，比多按一次确认的代价大得多。等你确认这条命令确实安全，用 `--allow` 加一条只匹配它的正则放行。',
     'safety.empty': '命令字符串是空的或者只有空白，根本没有东西可执行——这说明声明本身写错了或者漏了，不是一条真正的命令。去修正生成这个空字符串的地方；这里没有危险模式，`--allow` 也没有什么可放行的。',
+
+    // --- verify.mjs（task 18）：CLI 报告文案 ---
+    'verify.title': '验证报告',
+    'verify.mode.dryRun': '模式：dry-run —— 下面列出的命令都还没有真正执行过。',
+    'verify.mode.run': '模式：run —— 下面列出的命令已经真实执行过。',
+    'verify.result.passed': '结果：通过',
+    'verify.result.failed': '结果：未通过',
+    'verify.commands.heading': '命令清单',
+    'verify.col.role': '角色',
+    'verify.col.command': '命令',
+    'verify.col.status': '状态',
+    'verify.status.planned': '计划执行（dry-run，尚未运行）',
+    'verify.status.blocked': '已阻断（执行前被拒绝）',
+    'verify.status.passed': '通过',
+    'verify.status.failed': '失败',
+    'verify.status.timeout': '超时',
+    'verify.blocked.heading': '被阻断的命令',
+    // task-18-brief.md B3：checkCommand 的 overriddenBy 告诉调用方"这条命令
+    // 本来会被规则 X 拦下，是你用 --allow 显式放行的"——这正是 Task 16 把这个
+    // 字段带出来的意义所在。这个标题和下面的警告文案，是为了让这条信息在人类
+    // 可读报告里显眼地出现，而不是混在一堆正常通过里的一条脚注。
+    'verify.overridden.heading': '你亲手放行的危险命令',
+    'verify.overridden.warning': '`{role}`（`{command}`）本来会被 `{rule}` 规则拦下——你用 --allow 显式放行了它，这是你知情后自愿承担的风险。',
+    'verify.noCommands.note': '这个仓库没有声明任何验证命令。这不等于"已验证"——只是压根没有东西可以失败。请在 harness.config.json 的 verify 字段里补上命令，再重新跑一遍。',
+    'verify.runHint': '这是一次 dry-run —— 上面列出的命令都还没有真正执行过。加上 --run 才会真的执行这些命令。',
+    'verify.reportWritten': '证据已写入 {path}',
 
     // --- gap 目录：loop ---
     'gap.loop.none.title': '未定义 agent 循环模式',

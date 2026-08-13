@@ -69,6 +69,47 @@ test('test alone without lint or typecheck flags single-check-kind', () => {
   assert.ok(r.gapIds.includes('feedback.single-check-kind'));
 });
 
+// --- task-18-brief.md section B1: blocked/planned must never read as an
+// observed test failure. This is the controller's own pre-dispatch
+// measurement, repeated here as a permanent regression pin: feed each of
+// the five real verify statuses through the real scorer and check which
+// gap ids come out. 'blocked' and 'planned' mean the command was never
+// spawned (see verify-status.mjs) — a repo whose declared test command
+// happens to be one this tool's own safety boundary refuses to run must
+// never be told "your tests are failing"; it should read exactly like "we
+// have no evidence yet" (commands-unverified), the same as a report with
+// no test entry at all. ---
+
+test('B1: blocked test command reads as unverified, never as an observed failure', () => {
+  const report = { commands: [{ role: 'test', status: 'blocked', blockedBy: 'destructive-rm' }] };
+  const r = score(input({ files: HAS_TESTS, config: { verify: { test: 'rm -rf x' } }, verifyReport: report }));
+  assert.ok(r.gapIds.includes('feedback.commands-unverified'), 'a blocked command is unverified, not failing');
+  assert.equal(r.gapIds.includes('feedback.commands-failing'), false, 'a command this tool refused to run must not read as a test failure');
+  assert.equal(r.cappedByEvidence, true);
+});
+
+test('B1: planned (dry-run) test command reads as unverified, never as an observed failure', () => {
+  const report = { commands: [{ role: 'test', status: 'planned' }] };
+  const r = score(input({ files: HAS_TESTS, config: { verify: { test: 'go test ./...' } }, verifyReport: report }));
+  assert.ok(r.gapIds.includes('feedback.commands-unverified'));
+  assert.equal(r.gapIds.includes('feedback.commands-failing'), false, 'a dry-run entry was never executed and must not read as a test failure');
+  assert.equal(r.cappedByEvidence, true);
+});
+
+test('B1: timeout, failed, and passed test statuses behave as real, executed evidence', () => {
+  const timeout = score(input({ files: HAS_TESTS, config: { verify: { test: 'x' } }, verifyReport: { commands: [{ role: 'test', status: 'timeout' }] } }));
+  assert.ok(timeout.gapIds.includes('feedback.commands-failing'), 'a real timeout is a real observed failure');
+  assert.equal(timeout.gapIds.includes('feedback.commands-unverified'), false);
+
+  const failed = score(input({ files: HAS_TESTS, config: { verify: { test: 'x' } }, verifyReport: { commands: [{ role: 'test', status: 'failed' }] } }));
+  assert.ok(failed.gapIds.includes('feedback.commands-failing'));
+  assert.equal(failed.gapIds.includes('feedback.commands-unverified'), false);
+
+  const passed = score(input({ files: HAS_TESTS, config: { verify: { test: 'x' } }, verifyReport: { commands: [{ role: 'test', status: 'passed' }] } }));
+  assert.equal(passed.gapIds.includes('feedback.commands-failing'), false);
+  assert.equal(passed.gapIds.includes('feedback.commands-unverified'), false);
+});
+
 // --- full rung 0-4 coverage ---
 
 test('scores 0 and flags no-tests when no test files exist at all', () => {

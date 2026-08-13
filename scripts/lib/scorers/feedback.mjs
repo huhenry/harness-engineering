@@ -1,6 +1,7 @@
 import { ladder } from './ladder.mjs';
 import { VERIFY_ROLES } from '../config.mjs';
 import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
+import { isExecutedStatus } from '../verify-status.mjs';
 
 export const id = 'feedback';
 
@@ -60,11 +61,28 @@ export function score({ ctx, config, verifyReport }) {
 
   const testStatus = statusOf('test');
   // "Has evidence about the test role" is a strictly weaker claim than "the
-  // test role passed" — a recorded entry exists at all, pass or fail.
-  const hasTestEvidence = testStatus !== null;
-  // Only a *recorded* non-passing status counts as an observed failure.
-  // Without an entry (hasTestEvidence false), this stays false: we must
-  // never assert "it failed" for a command nobody ran (contract: missing
+  // test role passed" — a recorded entry exists AND that entry reflects a
+  // command that was actually spawned and observed.
+  //
+  // Task-18-brief.md section B1 (measured against this exact scorer before
+  // the fix): an entry merely *existing* is not enough — Task 18's verify
+  // records a 'blocked' entry for a command its own safety boundary
+  // refused to run, and a 'planned' entry for a dry-run command that was
+  // never spawned at all. `testStatus !== null` is true for both of those,
+  // so the old `hasTestEvidence = testStatus !== null` read a safety
+  // refusal (or a dry run) as "we have evidence", and the line below then
+  // read it as an *observed failure* — this tool reporting its own
+  // decision not to run a dangerous command back to the user as if it were
+  // their broken test suite. `isExecutedStatus` (verify-status.mjs) is the
+  // single shared predicate for "was this actually spawned and observed",
+  // so verify.mjs and this scorer can't drift back into disagreeing about
+  // it the way PRUNE_DIRS/DEFAULT_IGNORE and docker.runtimePins/manifest
+  // once did.
+  const hasTestEvidence = testStatus !== null && isExecutedStatus(testStatus);
+  // Only a *recorded, executed* non-passing status counts as an observed
+  // failure. Without real evidence (hasTestEvidence false — no entry, or
+  // an entry that was never actually run), this stays false: we must never
+  // assert "it failed" for a command nobody ran (contract: missing
   // evidence is not negative evidence).
   const testObservedFail = hasTestEvidence && testStatus !== 'passed';
 
