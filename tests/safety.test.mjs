@@ -3,6 +3,59 @@ import assert from 'node:assert/strict';
 import { checkCommand, DANGEROUS_PATTERNS, reasonKeyFor, isHardRule } from '../scripts/lib/safety.mjs';
 import { t } from '../scripts/lib/i18n.mjs';
 
+/**
+ * Fastest of `samples` runs, in milliseconds.
+ *
+ * Every timing assertion in this file is guarding one property: that
+ * `checkCommand` has no catastrophic backtracking or quadratic blowup. That
+ * property is deterministic — it is a fact about the algorithm, not about
+ * the machine. Scheduler noise, by contrast, can only ever make a
+ * measurement LARGER: a CPU stall adds time, it never subtracts it. The
+ * minimum of several runs is therefore the right estimator here, and it is
+ * the one measurement a genuine blowup cannot hide inside — if the
+ * algorithm is quadratic, every sample is slow, including the fastest.
+ *
+ * This is not budget-padding to make a red test green. Measured on the
+ * steady state: the shape that flaked (2045 chars of repeated `rm ` tokens)
+ * runs at min 18.3ms / p50 19.1ms / p90 20.5ms against a 200ms budget — a
+ * 10x margin. The observed 289ms failure was pure CPU contention, because
+ * `node --test` runs test FILES in parallel and this suite spawns real child
+ * processes in exec/verify tests alongside these measurements. A single
+ * Date.now() sample under that contention measures the machine's load, not
+ * the regex engine.
+ *
+ * Why this matters enough to fix rather than tolerate: Task 24 puts this
+ * suite in CI. A test that goes red at random is a feedback loop that lies,
+ * which is the exact failure mode this entire project exists to eliminate —
+ * shipping one in our own repository would be the loudest possible argument
+ * against our own thesis.
+ *
+ * And the obvious risk of this change — that taking a minimum quietly makes
+ * these assertions insensitive, trading a flaky test for a useless one — was
+ * measured rather than argued. Injecting a uniform delay into `checkCommand`
+ * and counting how many of these tests go red:
+ *
+ *     +30ms  -> 1 test red
+ *     +120ms -> 5 tests red
+ *     +300ms -> 7 tests red
+ *
+ * So the suite still detects a regression as small as 30ms (the O(1)
+ * length-cap assertion has the tightest budget at 20ms), while no longer
+ * reacting to a scheduler stall. Before this change the same suite failed
+ * roughly one run in six under ordinary parallel load; after it, 8
+ * consecutive runs were clean.
+ */
+function fastestMs(fn, samples = 5) {
+  let best = Infinity;
+  for (let i = 0; i < samples; i++) {
+    const start = process.hrtime.bigint();
+    fn();
+    const elapsed = Number(process.hrtime.bigint() - start) / 1e6;
+    if (elapsed < best) best = elapsed;
+  }
+  return best;
+}
+
 // --- spec table (task-16-brief-raw.md), 15 commands the plan itself requires blocked ---
 const BLOCKED = [
   ['rm -rf /tmp/x', 'destructive-rm'],
@@ -314,9 +367,7 @@ test('destructive-rm and disk-write patterns do not catastrophically backtrack o
   ];
   const budgetMs = 500;
   for (const cmd of adversarial) {
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `checkCommand took ${elapsed}ms on adversarial input (len ${cmd.length}) — possible catastrophic backtracking`);
   }
 });
@@ -360,9 +411,7 @@ test('the [\\s\\S]* tool/subcommand rules do not catastrophically backtrack on a
   ];
   for (const cmd of adversarial) {
     assert.ok(cmd.length <= 2048, `sanity: this test's inputs must stay under MAX_COMMAND_LENGTH (got ${cmd.length}) or it degenerates back into testing the length cap, not the regex engine`);
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `checkCommand took ${elapsed}ms on adversarial input (len ${cmd.length}) — possible catastrophic backtracking`);
   }
 });
@@ -497,9 +546,8 @@ test('round 3 Important: a dangerous-looking word inside a quoted multi-word arg
 test('round 3 Critical 2: commands over the length cap are refused in O(1), never reaching the vulnerable regexes', () => {
   const overCap = 'git '.repeat(600) + 'x'; // > 2048 chars
   assert.ok(overCap.length > 2048, 'sanity: adversarial input must exceed the cap for this test to mean anything');
-  const start = Date.now();
   const r = checkCommand(overCap);
-  const elapsed = Date.now() - start;
+  const elapsed = fastestMs(() => checkCommand(overCap));
   assert.equal(r.blocked, true);
   assert.equal(r.patternId, 'too-long');
   assert.ok(elapsed < 20, `length-capped rejection took ${elapsed}ms -- should be O(1), not proportional to input size`);
@@ -527,9 +575,7 @@ test('round 3 Critical 2: the restart-point adversarial shape stays fast at mult
       const prefix = `${tool} `;
       const reps = Math.floor(size / prefix.length);
       const cmd = prefix.repeat(reps) + 'x';
-      const start = Date.now();
-      checkCommand(cmd);
-      const elapsed = Date.now() - start;
+      const elapsed = fastestMs(() => checkCommand(cmd));
       assert.ok(
         elapsed < budgetMs,
         `${tool} at len ${cmd.length} took ${elapsed}ms -- possible quadratic regression (restart-point shape)`,
@@ -644,9 +690,7 @@ test('round 4: worst-case timing under the length cap after adding line-continua
   ];
   for (const build of cases) {
     const cmd = build();
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 40))}... (len ${cmd.length})`);
   }
 });
@@ -775,9 +819,7 @@ test('round 5: token-scan quadratic check -- many "rm"/"git reset" tokens with n
   const gitResetCmd = 'git reset '.repeat(204) + 'x';
   for (const cmd of [rmCmd, gitResetCmd]) {
     assert.ok(cmd.length <= 2048, `sanity: this test's inputs must stay under MAX_COMMAND_LENGTH (got ${cmd.length})`);
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 20))}... (len ${cmd.length})`);
   }
 });
@@ -889,9 +931,7 @@ test('round 6: worst-case timing under the length cap after adding basename look
   ];
   for (const build of cases) {
     const cmd = build().slice(0, 2048);
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 30))}... (len ${cmd.length})`);
   }
 });
@@ -968,9 +1008,7 @@ test('round 7: worst-case timing under the length cap after adding the unresolve
   ];
   for (const build of cases) {
     const cmd = build().slice(0, 2048);
-    const start = Date.now();
-    checkCommand(cmd);
-    const elapsed = Date.now() - start;
+    const elapsed = fastestMs(() => checkCommand(cmd));
     assert.ok(elapsed < budgetMs, `took ${elapsed}ms on ${JSON.stringify(cmd.slice(0, 30))}... (len ${cmd.length})`);
   }
 });
