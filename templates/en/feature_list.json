@@ -1,0 +1,5 @@
+{
+  "features": [
+    { "id": "example-feature", "title": "Describe your first real feature here", "status": "todo" }
+  ]
+}

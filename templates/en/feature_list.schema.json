@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "feature_list.json",
+  "description": "Structured, machine-readable feature list and status, read by both agents and harness-engineering's own state scorer.",
+  "type": "object",
+  "required": ["features"],
+  "properties": {
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable, unique identifier for this feature."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "in-progress", "done", "blocked"]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

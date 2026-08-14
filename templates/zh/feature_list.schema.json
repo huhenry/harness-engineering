@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "feature_list.json",
+  "description": "结构化、机器可读的功能清单及其状态，agent 和 harness-engineering 自己的 state 评分器都会读取它。",
+  "type": "object",
+  "required": ["features"],
+  "properties": {
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "该功能稳定且唯一的标识符。"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "in-progress", "done", "blocked"]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

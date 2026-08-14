@@ -1,0 +1,13 @@
+{
+  "lang": "zh",
+  "verify": {
+    "_comment": "下面每个角色都以 null 起步——这会被本工具诚实地识别为“未声明”，而不是一条注定失败的命令。只有真正的命令存在了才填进来，比如 \"test\": \"go test ./...\"，然后跑一遍 `verify --run` 把声明变成证据。",
+    "bootstrap": null,
+    "test": null,
+    "lint": null,
+    "typecheck": null,
+    "e2e": null,
+    "smoke": null
+  },
+  "ignore": []
+}

@@ -1,0 +1,5 @@
+{
+  "features": [
+    { "id": "example-feature", "title": "在这里填写第一个真实功能的描述", "status": "todo" }
+  ]
+}
