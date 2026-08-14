@@ -217,6 +217,21 @@ export const MESSAGES = {
     'gap.loop.no-rollback.title': 'No rollback mechanism',
     'gap.loop.no-rollback.why': 'Without a rollback path, a bad loop iteration corrupts state permanently, and every later iteration keeps building on top of it.',
     'gap.loop.no-rollback.fix': 'Add a rollback mechanism (e.g. git revert or a snapshot restore) that the loop can invoke when an iteration fails its check.',
+
+    // --- scaffold.mjs (task 20): CLI report copy ---
+    'scaffold.title': 'Harness Scaffold',
+    'scaffold.mode.dryRun': 'Mode: dry-run — nothing below was actually written. Re-run with --apply to write it.',
+    'scaffold.mode.apply': 'Mode: apply — the files below were actually written.',
+    'scaffold.noGaps': 'Nothing to scaffold — every scaffoldable gap already has a file in this repository (or --only matched a gap with no scaffoldable templates).',
+    'scaffold.planHeading': 'Planned files',
+    'scaffold.col.action': 'Action',
+    'scaffold.col.target': 'Target',
+    'scaffold.col.gap': 'Gap',
+    'scaffold.action.create': 'create (no existing file)',
+    'scaffold.action.propose': 'propose (existing file left untouched)',
+    'scaffold.applyHint': 'This was a dry run — nothing above was actually written. Re-run with --apply to write these files.',
+    'scaffold.failure': 'Failed to write {target}: {message}',
+    'scaffold.writtenSoFar': 'Already written to disk before this failure (not rolled back): {list}',
   },
   zh: {
     'subsystem.instructions': '指令',
@@ -427,6 +442,21 @@ export const MESSAGES = {
     'gap.loop.no-rollback.title': '缺少回滚机制',
     'gap.loop.no-rollback.why': '没有回滚机制时，一次糟糕的循环迭代会永久性地污染状态，之后每一轮迭代都是在这个基础上继续叠加。',
     'gap.loop.no-rollback.fix': '加一个回滚机制（例如 git revert 或快照还原），供循环在某次迭代没通过检查时调用。',
+
+    // --- scaffold.mjs（task 20）：CLI 报告文案 ---
+    'scaffold.title': 'Harness 脚手架',
+    'scaffold.mode.dryRun': '模式：dry-run —— 下面列出的内容都还没有真正写入。加上 --apply 才会真的写入。',
+    'scaffold.mode.apply': '模式：apply —— 下面列出的文件已经真实写入。',
+    'scaffold.noGaps': '没有可脚手架的内容 —— 这个仓库里每个可脚手架的差距都已经有对应文件了（或者 --only 选中的差距没有可脚手架的模板）。',
+    'scaffold.planHeading': '计划写入的文件',
+    'scaffold.col.action': '动作',
+    'scaffold.col.target': '目标路径',
+    'scaffold.col.gap': '差距',
+    'scaffold.action.create': '新建（原来不存在）',
+    'scaffold.action.propose': '提案（原文件保持不变）',
+    'scaffold.applyHint': '这是一次 dry-run —— 上面列出的内容都还没有真正写入。加上 --apply 才会真的写入这些文件。',
+    'scaffold.failure': '写入 {target} 失败：{message}',
+    'scaffold.writtenSoFar': '失败前已经真实写入磁盘的文件（不会回滚）：{list}',
   },
 };
 
