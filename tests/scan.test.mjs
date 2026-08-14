@@ -1,12 +1,30 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createScanContext } from '../scripts/lib/scan.mjs';
 
+// Every temp repository this file creates, removed when the file's tests
+// finish. Without this the suite littered the machine it ran on: 1157
+// `harness-*` directories had accumulated in $TMPDIR, growing by ~22 on
+// every run, because mkdtempSync has no implicit cleanup and these helpers
+// never removed what they made. Leaving that in a project whose entire
+// subject is engineering discipline is not a good look, and it would follow
+// every CI runner too once Task 24 lands.
+const TEMP_DIRS = [];
+function tempRepo(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  TEMP_DIRS.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of TEMP_DIRS) rmSync(dir, { recursive: true, force: true });
+});
+
+
 function makeRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'harness-scan-'));
+  const root = tempRepo('harness-scan-');
   writeFileSync(join(root, 'AGENTS.md'), '# Hi\nline two\n');
   writeFileSync(join(root, 'package.json'), '{"name":"x"}');
   mkdirSync(join(root, 'src'), { recursive: true });
@@ -51,7 +69,7 @@ test('gitLastCommit returns null outside a git repo', () => {
 });
 
 function makeMonorepo() {
-  const root = mkdtempSync(join(tmpdir(), 'harness-scan-mono-'));
+  const root = tempRepo('harness-scan-mono-');
   mkdirSync(join(root, 'src'), { recursive: true });
   writeFileSync(join(root, 'src', 'a.go'), 'package main');
   mkdirSync(join(root, 'packages', 'a', 'node_modules', 'dep'), { recursive: true });
@@ -67,7 +85,7 @@ test('default ignores apply at any depth, not just the repo root', () => {
 });
 
 function makeFixturesRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'harness-scan-fixtures-'));
+  const root = tempRepo('harness-scan-fixtures-');
   mkdirSync(join(root, 'fixtures'), { recursive: true });
   writeFileSync(join(root, 'fixtures', 'root.txt'), 'root fixture');
   mkdirSync(join(root, 'src', 'fixtures'), { recursive: true });
@@ -83,7 +101,7 @@ test('caller-supplied ignore patterns match literally, unlike depth-agnostic def
 });
 
 function makePruneRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'harness-scan-prune-'));
+  const root = tempRepo('harness-scan-prune-');
   mkdirSync(join(root, 'node_modules', 'deep', 'nested'), { recursive: true });
   writeFileSync(join(root, 'node_modules', 'deep', 'nested', 'x.mjs'), 'ignored');
   writeFileSync(join(root, 'keep.mjs'), 'kept');

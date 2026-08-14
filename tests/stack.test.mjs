@@ -1,10 +1,28 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectStack, STACK_SIGNATURES, signatureFor } from '../scripts/lib/stack.mjs';
 import { createScanContext } from '../scripts/lib/scan.mjs';
+
+// Every temp repository this file creates, removed when the file's tests
+// finish. Without this the suite littered the machine it ran on: 1157
+// `harness-*` directories had accumulated in $TMPDIR, growing by ~22 on
+// every run, because mkdtempSync has no implicit cleanup and these helpers
+// never removed what they made. Leaving that in a project whose entire
+// subject is engineering discipline is not a good look, and it would follow
+// every CI runner too once Task 24 lands.
+const TEMP_DIRS = [];
+function tempRepo(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  TEMP_DIRS.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of TEMP_DIRS) rmSync(dir, { recursive: true, force: true });
+});
+
 
 function fakeCtx(files) {
   const set = new Set(files);
@@ -44,7 +62,7 @@ test('every signature declares manifest, lockfiles and runtimePins', () => {
 // --- Self-review: behavior against a *real* createScanContext, not the fake ---
 
 function makeRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-'));
+  const root = tempRepo('harness-stack-');
   writeFileSync(join(root, 'package.json'), '{"name":"x"}');
   writeFileSync(join(root, 'package-lock.json'), '{}');
   mkdirSync(join(root, 'services', 'api'), { recursive: true });
@@ -58,7 +76,7 @@ test('real ScanContext: detects root-level manifest and a manifest nested in a s
 });
 
 test('real ScanContext: a manifest only in a subdirectory (services/api/go.mod) is still detected', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-nested-'));
+  const root = tempRepo('harness-stack-nested-');
   mkdirSync(join(root, 'services', 'api'), { recursive: true });
   writeFileSync(join(root, 'services', 'api', 'go.mod'), 'module x\n\ngo 1.21\n');
   const ctx = createScanContext(root);
@@ -69,14 +87,14 @@ test('real ScanContext: a manifest only in a subdirectory (services/api/go.mod) 
 });
 
 test('real ScanContext: no recognizable manifest returns [], not undefined or a throw', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-empty-'));
+  const root = tempRepo('harness-stack-empty-');
   writeFileSync(join(root, 'README.md'), '# hi\n');
   const ctx = createScanContext(root);
   assert.deepEqual(detectStack(ctx), []);
 });
 
 test('real ScanContext: ignored directories (node_modules) do not trigger a false positive', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-ignored-'));
+  const root = tempRepo('harness-stack-ignored-');
   mkdirSync(join(root, 'node_modules', 'some-dep'), { recursive: true });
   writeFileSync(join(root, 'node_modules', 'some-dep', 'go.mod'), 'module dep\n');
   writeFileSync(join(root, 'README.md'), '# hi\n');
@@ -105,7 +123,7 @@ test('signatureFor returns null for an unknown id rather than throwing', () => {
 // --- Review fix: CMakeLists.txt alone must not be mistaken for 'embedded' ---
 
 test('real ScanContext: a plain CMake C++ project (no platformio.ini/sdkconfig) is not classified embedded', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-cmake-'));
+  const root = tempRepo('harness-stack-cmake-');
   writeFileSync(join(root, 'CMakeLists.txt'), 'cmake_minimum_required(VERSION 3.20)\nproject(x)\n');
   mkdirSync(join(root, 'src'), { recursive: true });
   writeFileSync(join(root, 'src', 'main.cpp'), 'int main() { return 0; }\n');
@@ -114,7 +132,7 @@ test('real ScanContext: a plain CMake C++ project (no platformio.ini/sdkconfig) 
 });
 
 test('real ScanContext: a platformio.ini project is still detected as embedded', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-platformio-'));
+  const root = tempRepo('harness-stack-platformio-');
   writeFileSync(join(root, 'platformio.ini'), '[env:esp32dev]\nplatform = espressif32\n');
   const ctx = createScanContext(root);
   assert.deepEqual(detectStack(ctx), ['embedded']);
@@ -123,7 +141,7 @@ test('real ScanContext: a platformio.ini project is still detected as embedded',
 // --- Review fix: docker manifest must cover all Compose file name variants ---
 
 test('real ScanContext: a repo with only compose.yml (no Dockerfile) is detected as docker', () => {
-  const root = mkdtempSync(join(tmpdir(), 'harness-stack-compose-'));
+  const root = tempRepo('harness-stack-compose-');
   writeFileSync(join(root, 'compose.yml'), 'services:\n  app:\n    image: alpine\n');
   const ctx = createScanContext(root);
   assert.deepEqual(detectStack(ctx), ['docker']);

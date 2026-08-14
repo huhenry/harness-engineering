@@ -1,12 +1,30 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { score } from '../../scripts/lib/scorers/environment.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { createScanContext, globToRegExp } from '../../scripts/lib/scan.mjs';
 import { detectStack } from '../../scripts/lib/stack.mjs';
+
+// Every temp repository this file creates, removed when the file's tests
+// finish. Without this the suite littered the machine it ran on: 1157
+// `harness-*` directories had accumulated in $TMPDIR, growing by ~22 on
+// every run, because mkdtempSync has no implicit cleanup and these helpers
+// never removed what they made. Leaving that in a project whose entire
+// subject is engineering discipline is not a good look, and it would follow
+// every CI runner too once Task 24 lands.
+const TEMP_DIRS = [];
+function tempRepo(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  TEMP_DIRS.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of TEMP_DIRS) rmSync(dir, { recursive: true, force: true });
+});
+
 
 function input({ files = {}, stack = ['node'], verifyReport = null, now = new Date('2026-08-10T00:00:00Z') } = {}) {
   return {
@@ -219,7 +237,7 @@ test('a docker-only repo with only docker-compose.yml (no Dockerfile) is no long
 // test double, so this exercises the actual stack.mjs signature table.)
 
 function makeComposeOnlyRepo(filename) {
-  const root = mkdtempSync(join(tmpdir(), 'harness-env-compose-'));
+  const root = tempRepo('harness-env-compose-');
   writeFileSync(join(root, filename), 'services:\n  app:\n    image: alpine\n');
   return root;
 }
@@ -262,7 +280,7 @@ test('real ScanContext: a compose.yml-only repo (the filename most likely to be 
 test('every Compose filename spelling is recognized as containerized, not just docker-compose.yml (parity, looped)', () => {
   const composeSpellings = ['docker-compose.yml', 'docker-compose.yaml', 'compose.yml', 'compose.yaml'];
   for (const filename of composeSpellings) {
-    const root = mkdtempSync(join(tmpdir(), 'harness-env-compose-parity-'));
+    const root = tempRepo('harness-env-compose-parity-');
     writeFileSync(join(root, filename), 'services:\n  app:\n    image: alpine\n');
     // A bootstrap script is included purely to isolate what's under test:
     // without it, rung 3 would also fail and add its own unrelated gap.
