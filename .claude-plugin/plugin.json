@@ -1,0 +1,9 @@
+{
+  "name": "harness-engineering",
+  "version": "0.1.0",
+  "description": "Assess, scaffold, and evidence-verify AI coding agent harnesses. Six-subsystem rubric with gated L0-L5 levels and a verifier that runs your declared checks for real.",
+  "author": { "name": "huhenry", "url": "https://github.com/huhenry" },
+  "repository": "https://github.com/huhenry/harness-engineering",
+  "license": "MIT",
+  "keywords": ["harness", "agents", "agents-md", "context-engineering", "verification", "claude-code", "agent-skills", "codex", "cursor"]
+}

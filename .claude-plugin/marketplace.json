@@ -1,0 +1,12 @@
+{
+  "name": "harness-engineering",
+  "owner": { "name": "huhenry", "url": "https://github.com/huhenry" },
+  "plugins": [
+    {
+      "name": "harness-engineering",
+      "source": "./",
+      "description": "Assess, scaffold, and evidence-verify AI coding agent harnesses.",
+      "version": "0.1.0"
+    }
+  ]
+}

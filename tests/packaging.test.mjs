@@ -1,0 +1,235 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  readFileSync, existsSync, mkdtempSync, rmSync, mkdirSync, cpSync, readdirSync, statSync, writeFileSync,
+} from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const readJson = (p) => JSON.parse(readFileSync(join(ROOT, p), 'utf8'));
+const SKILLS = ['harness-engineering', 'harness-assess', 'harness-scaffold', 'harness-verify', 'harness-loop'];
+
+// Same tempRepo()+after() convention as tests/scan.test.mjs and
+// tests/skills.test.mjs (see ad3ac81) -- every mkdtempSync call is routed
+// through this helper so nothing is left behind in $TMPDIR.
+const TEMP_DIRS = [];
+function tempDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  TEMP_DIRS.push(dir);
+  return dir;
+}
+after(() => {
+  for (const dir of TEMP_DIRS) rmSync(dir, { recursive: true, force: true });
+});
+
+// --- plugin.json ------------------------------------------------------------
+//
+// Fields verified against Claude Code's official plugin manifest docs
+// (https://code.claude.com/docs/en/plugins-reference, fetched directly) --
+// see task-22-report.md's B2 section for the field-by-field citations. Not
+// copied blind from the plan: `author` really is an object (`name` required,
+// `email`/`url` optional), `repository` really is a plain string (source URL,
+// not a `{type,url}` object), and `.claude-plugin/plugin.json` with a
+// sibling top-level `skills/` (never nested inside `.claude-plugin/`) really
+// is the required layout.
+test('plugin.json carries the required metadata', () => {
+  const p = readJson('.claude-plugin/plugin.json');
+  assert.equal(p.name, 'harness-engineering');
+  assert.match(p.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(p.license, 'MIT');
+  assert.equal(p.repository, 'https://github.com/huhenry/harness-engineering');
+  assert.ok(p.description.length > 30);
+  assert.ok(Array.isArray(p.keywords) && p.keywords.includes('harness'));
+  // `author` must be an object per the official schema (name required,
+  // email/url optional) -- not a bare string, which the plan never actually
+  // pinned down (see brief B2).
+  assert.equal(typeof p.author, 'object');
+  assert.equal(p.author.name, 'huhenry');
+  assert.match(p.author.url, /^https:\/\//);
+});
+
+// --- marketplace.json --------------------------------------------------------
+//
+// `owner` shape and the `source` field's relative-path form ("must start
+// with `./`, resolved relative to the marketplace root") are both taken
+// directly from the same official docs page's Marketplace Schema section,
+// cross-checked against a real published marketplace.json
+// (ivan-magda/claude-code-plugin-template) that uses the identical
+// `./plugins/<name>` relative-path idiom. `source: "./"` for a plugin that
+// lives at the marketplace root itself (this repo's actual layout) is the
+// degenerate case of that same documented rule; see the report for exactly
+// what is and is not independently confirmed for that literal form.
+test('marketplace.json points at this plugin', () => {
+  const m = readJson('.claude-plugin/marketplace.json');
+  assert.equal(m.name, 'harness-engineering');
+  assert.equal(m.plugins.length, 1);
+  assert.equal(m.plugins[0].source, './');
+  assert.match(m.plugins[0].source, /^\.\//, 'relative plugin sources must start with "./" per the official schema');
+  assert.equal(m.plugins[0].version, readJson('.claude-plugin/plugin.json').version);
+  assert.equal(typeof m.owner, 'object');
+  assert.equal(m.owner.name, 'huhenry');
+});
+
+test('plugin version is the single source of truth for package.json', () => {
+  assert.equal(readJson('package.json').version, readJson('.claude-plugin/plugin.json').version);
+});
+
+// --- install.sh: the multi-ecosystem copy path -------------------------------
+
+test('install.sh copies every skill into a detected ecosystem directory', () => {
+  const dst = tempDir('harness-install-');
+  mkdirSync(join(dst, '.cursor', 'skills'), { recursive: true });
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const s of SKILLS) {
+    assert.ok(existsSync(join(dst, '.cursor', 'skills', s, 'SKILL.md')), `missing ${s}`);
+  }
+});
+
+test('install.sh copies into every detected ecosystem directory, not just the first one', () => {
+  const dst = tempDir('harness-install-multi-');
+  mkdirSync(join(dst, '.cursor', 'skills'), { recursive: true });
+  mkdirSync(join(dst, '.codex', 'skills'), { recursive: true });
+  // .gemini/skills and .agent/skills deliberately absent -- must not appear.
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const eco of ['.cursor', '.codex']) {
+    for (const s of SKILLS) {
+      assert.ok(existsSync(join(dst, eco, 'skills', s, 'SKILL.md')), `missing ${eco}/skills/${s}`);
+    }
+  }
+  assert.ok(!existsSync(join(dst, '.gemini')), 'must not create an ecosystem dir that was never present');
+  assert.ok(!existsSync(join(dst, '.agent')), 'must not create an ecosystem dir that was never present');
+});
+
+test('install.sh --dry-run writes nothing', () => {
+  const dst = tempDir('harness-install-dry-');
+  mkdirSync(join(dst, '.cursor', 'skills'), { recursive: true });
+  execFileSync('sh', [join(ROOT, 'install.sh'), '--dry-run'], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  assert.deepEqual(readdirSync(join(dst, '.cursor', 'skills')), []);
+});
+
+test('install.sh defaults to .claude/skills when nothing is detected', () => {
+  const dst = tempDir('harness-install-default-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  assert.ok(existsSync(join(dst, '.claude', 'skills', 'harness-engineering', 'SKILL.md')));
+});
+
+test('install.sh is executable', () => {
+  const mode = statSync(join(ROOT, 'install.sh')).mode;
+  assert.ok(mode & 0o111, 'install.sh must carry the executable bit (chmod +x)');
+});
+
+test('install.sh is valid POSIX sh under dash, not just bash-flavored /bin/sh', (t) => {
+  const dashPath = ['/bin/dash', '/usr/bin/dash'].find((p) => existsSync(p));
+  if (!dashPath) { t.skip('dash not installed on this machine'); return; }
+  const dst = tempDir('harness-install-dash-');
+  const result = spawnSync(dashPath, [join(ROOT, 'install.sh')], {
+    cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT }, encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, `dash run failed: ${result.stderr}`);
+  assert.ok(existsSync(join(dst, '.claude', 'skills', 'harness-engineering', 'SKILL.md')));
+});
+
+// --- Brief B3.1: cp -R overwrite semantics -----------------------------------
+//
+// Judgment call (see report): re-running install.sh over an existing
+// harness-* skill directory overwrites it -- treated as an upgrade, not data
+// loss, because these directories are entirely this project's own generated
+// content (never a place a user is expected to hand-edit and keep local
+// changes to). This test pins that real, current behavior down as a
+// regression test rather than leaving it as an unverified claim in prose.
+test('install.sh overwrites an existing skill install on re-run (upgrade semantics)', () => {
+  const dst = tempDir('harness-install-upgrade-');
+  const target = join(dst, '.cursor', 'skills');
+  mkdirSync(target, { recursive: true });
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+
+  const skillFile = join(target, 'harness-verify', 'SKILL.md');
+  const shipped = readFileSync(skillFile, 'utf8');
+  const tampered = `${shipped}\n<!-- locally edited by a user -->\n`;
+  writeFileSync(skillFile, tampered);
+  assert.equal(readFileSync(skillFile, 'utf8'), tampered, 'sanity: local edit landed before reinstall');
+
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  assert.equal(readFileSync(skillFile, 'utf8'), shipped, 'reinstall must overwrite back to the shipped copy');
+});
+
+// --- Brief B1 (Critical): the installed-path decision, proven, not asserted -
+//
+// Decision: (b) -- install.sh's five ecosystem targets ship skill TEXT only,
+// same as the plan's own skeleton, and this is disclosed rather than hidden.
+// See task-22-report.md for the full reasoning; the short version: every
+// wrapping SKILL.md (harness-assess/scaffold/verify, all Task 21 content
+// this task must not touch) already documents a three-way script-location
+// check whose third branch says, verbatim, "this skill was installed by
+// copying only skills/ into another ecosystem ... Ask the user for a
+// harness-engineering checkout path ... Do not guess a path." That prose
+// already IS option (b), already ships, and already has its own passing
+// test (tests/skills.test.mjs). Option (a) would require rewriting that
+// prose in three files this task is barred from touching, and no
+// $CLAUDE_PLUGIN_ROOT-equivalent env var exists in the four other
+// ecosystems for a relative-path scheme to anchor on -- see the report.
+//
+// What must still be proven for real, not just asserted, is the OTHER half
+// of the dual-distribution promise: that the Claude Code plugin path this
+// task's own .claude-plugin/ manifests newly enable actually works,
+// end-to-end, from a fully detached install -- not merely from a repo
+// checkout where every path resolves by construction. This copies
+// .claude-plugin/, skills/, and scripts/ together into one temp directory
+// (mirroring what Claude Code's own docs describe: "Claude Code copies each
+// installed plugin into the local versioned plugin cache"), points
+// CLAUDE_PLUGIN_ROOT at that copy, and spawns the real subprocess from a
+// THIRD, unrelated directory -- so nothing about the result can be
+// explained by accidental proximity to this repository's own scripts/.
+test('B1: a fully detached plugin install actually runs a documented command end to end', () => {
+  const installed = tempDir('harness-plugin-install-');
+  for (const dir of ['.claude-plugin', 'skills', 'scripts']) {
+    cpSync(join(ROOT, dir), join(installed, dir), { recursive: true });
+  }
+  assert.ok(existsSync(join(installed, '.claude-plugin', 'plugin.json')), 'sanity: this looks like a real plugin bundle');
+
+  const skillBody = readFileSync(join(installed, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  const m = skillBody.match(/\$CLAUDE_PLUGIN_ROOT(\/scripts\/[a-z-]+\.mjs)/);
+  assert.ok(m, 'harness-assess must document a $CLAUDE_PLUGIN_ROOT script command');
+
+  const unrelatedCwd = tempDir('harness-plugin-cwd-');
+  const result = spawnSync(process.execPath, [join(installed, m[1]), join(ROOT, 'fixtures', 'good-repo')], {
+    cwd: unrelatedCwd,
+    env: { ...process.env, CLAUDE_PLUGIN_ROOT: installed },
+    encoding: 'utf8',
+  });
+  assert.equal(result.error, undefined, `failed to spawn: ${result.error}`);
+  assert.notEqual(result.status, null, 'process did not run to completion');
+  assert.ok(result.stdout.includes('#'), `expected real markdown report on stdout (stderr: ${result.stderr})`);
+});
+
+// --- Brief B1(b): the honest-limitation half of the same decision -----------
+//
+// The flip side of the plugin path working: install.sh's targets must NOT
+// pretend to work. No scripts/ may be resolvable from an install.sh-produced
+// skill directory at any of the relative offsets a script-relative-path
+// scheme could plausibly try, and install.sh's own stdout must say so in
+// its own words -- not leave the user to discover the gap by trying a
+// command and getting ENOENT.
+test('install.sh targets ship skill text only -- no scripts/ is resolvable, and install.sh says so', () => {
+  const dst = tempDir('harness-install-limitation-');
+  mkdirSync(join(dst, '.codex', 'skills'), { recursive: true });
+  const output = execFileSync('sh', [join(ROOT, 'install.sh')], {
+    cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT }, encoding: 'utf8',
+  });
+
+  const skillDir = join(dst, '.codex', 'skills', 'harness-verify');
+  assert.ok(existsSync(join(skillDir, 'SKILL.md')));
+  // Every relative offset a "walk up from the skill's own directory" scheme
+  // could plausibly try -- none of them resolve, because install.sh never
+  // copies scripts/ anywhere.
+  assert.ok(!existsSync(join(skillDir, 'scripts')), 'no scripts/ next to the skill itself');
+  assert.ok(!existsSync(join(dst, '.codex', 'skills', 'scripts')), 'no scripts/ as a sibling of the skill directories');
+  assert.ok(!existsSync(join(dst, '.codex', 'scripts')), 'no scripts/ one level up');
+  assert.ok(!existsSync(join(dst, 'scripts')), 'no scripts/ at the install target root');
+
+  assert.match(output, /script/i, 'install.sh output must mention the scripts/ gap in its own words');
+  assert.match(output, /(checkout|github\.com\/huhenry\/harness-engineering)/i, 'install.sh output must point at where to get a working checkout');
+});
