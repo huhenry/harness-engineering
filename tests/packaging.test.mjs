@@ -180,9 +180,17 @@ test('install.sh overwrites an existing skill install on re-run (upgrade semanti
 // .claude-plugin/, skills/, and scripts/ together into one temp directory
 // (mirroring what Claude Code's own docs describe: "Claude Code copies each
 // installed plugin into the local versioned plugin cache"), points
-// CLAUDE_PLUGIN_ROOT at that copy, and spawns the real subprocess from a
-// THIRD, unrelated directory -- so nothing about the result can be
-// explained by accidental proximity to this repository's own scripts/.
+// the plugin bundle, performs the SAME TEXT SUBSTITUTION Claude Code performs
+// on a plugin skill's markdown, and spawns the resulting command line through
+// a shell from a THIRD, unrelated directory -- so nothing about the result can
+// be explained by accidental proximity to this repository's own scripts/.
+//
+// Substitution, not an environment variable: per Claude Code's documentation
+// the `${CLAUDE_PLUGIN_ROOT}` placeholder is replaced inside the skill's own
+// markdown when the skill loads; no such variable is exported to a Bash
+// subprocess. So this test deliberately runs with CLAUDE_PLUGIN_ROOT ABSENT
+// from the environment -- after substitution there is nothing left to look up,
+// and a command that still needed the variable would be broken in production.
 test('B1: a fully detached plugin install actually runs a documented command end to end', () => {
   const installed = tempDir('harness-plugin-install-');
   for (const dir of ['.claude-plugin', 'skills', 'scripts']) {
@@ -190,14 +198,17 @@ test('B1: a fully detached plugin install actually runs a documented command end
   }
   assert.ok(existsSync(join(installed, '.claude-plugin', 'plugin.json')), 'sanity: this looks like a real plugin bundle');
 
-  const skillBody = readFileSync(join(installed, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
-  const m = skillBody.match(/\$CLAUDE_PLUGIN_ROOT(\/scripts\/[a-z-]+\.mjs)/);
-  assert.ok(m, 'harness-assess must document a $CLAUDE_PLUGIN_ROOT script command');
+  const skillBody = readFileSync(join(installed, 'skills', 'harness-assess', 'SKILL.md'), 'utf8')
+    .replaceAll('${CLAUDE_PLUGIN_ROOT}', installed);
+  const m = skillBody.match(new RegExp(`node "(${installed}/scripts/[a-z-]+\\.mjs)"`));
+  assert.ok(m, 'harness-assess must document a ${CLAUDE_PLUGIN_ROOT} script command');
 
   const unrelatedCwd = tempDir('harness-plugin-cwd-');
-  const result = spawnSync(process.execPath, [join(installed, m[1]), join(ROOT, 'fixtures', 'good-repo')], {
+  const env = { ...process.env };
+  delete env.CLAUDE_PLUGIN_ROOT;
+  const result = spawnSync('sh', ['-c', `node "${m[1]}" "${join(ROOT, 'fixtures', 'good-repo')}"`], {
     cwd: unrelatedCwd,
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: installed },
+    env,
     encoding: 'utf8',
   });
   assert.equal(result.error, undefined, `failed to spawn: ${result.error}`);

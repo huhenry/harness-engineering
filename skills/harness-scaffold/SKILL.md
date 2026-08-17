@@ -22,14 +22,14 @@ Write the missing harness files, propose alongside anything that already exists,
 ## Workflow
 
 1. Locate the scripts, same three-way check as every harness-* skill that wraps a script:
-   - `$CLAUDE_PLUGIN_ROOT` set → `$CLAUDE_PLUGIN_ROOT/scripts/`. Normal case for an installed Claude Code plugin.
+   - `${CLAUDE_PLUGIN_ROOT}` was substituted with a real path → `${CLAUDE_PLUGIN_ROOT}/scripts/`. Normal case for an installed Claude Code plugin.
    - Working inside a harness-engineering repo checkout → `scripts/scaffold.mjs`, relative to the repo root.
    - Neither → this skill was installed by copying only `skills/` into another ecosystem (no `scripts/` present). Ask the user for a harness-engineering checkout path, or point them at https://github.com/huhenry/harness-engineering. Do not guess a path.
-2. Dry run first, always: `node "$CLAUDE_PLUGIN_ROOT/scripts/scaffold.mjs" <repo>`
+2. Dry run first, always: `node "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.mjs" <repo>`
    - With no flags, this scaffolds every gap `harness-assess` would currently report as scaffoldable, ROI descending.
    - Narrow it with `--only <gap-id-or-subsystem>` (comma-separated, or the flag repeated) — this is a direct-select escape hatch, not a filter: it names gap ids/subsystems out of the rubric directly and does not itself run assess.
 3. Show the full plan table to the user — every row's action (`create` or `propose`) and target path — and wait for explicit approval before writing anything.
-4. Apply, only after approval: `node "$CLAUDE_PLUGIN_ROOT/scripts/scaffold.mjs" <repo> --apply`
+4. Apply, only after approval: `node "${CLAUDE_PLUGIN_ROOT}/scripts/scaffold.mjs" <repo> --apply`
 5. Report exactly what was written (or the exact point a write failed, and what was written before that) — quote the tool's own output, don't re-describe it from memory.
 
 ## Reading the output

@@ -22,14 +22,14 @@ Turn "it should work" into a real exit code.
 ## Workflow
 
 1. Locate the scripts. This is the same three-way check every harness-* skill that wraps a script needs:
-   - `$CLAUDE_PLUGIN_ROOT` is set → scripts live at `$CLAUDE_PLUGIN_ROOT/scripts/`. This is the normal case when this skill runs as an installed Claude Code plugin (the primary distribution path — see `.claude-plugin/marketplace.json`), because Claude Code sets that variable to the plugin's real root directory, where `scripts/` and `skills/` sit side by side.
+   - `${CLAUDE_PLUGIN_ROOT}` was substituted with a real path → scripts live at `${CLAUDE_PLUGIN_ROOT}/scripts/`. This is the normal case when this skill runs as an installed Claude Code plugin (the primary distribution path — see `.claude-plugin/marketplace.json`), because Claude Code substitutes this placeholder, in the skill's own markdown, with the plugin's real root directory — where `scripts/` and `skills/` sit side by side. It is a text substitution performed when the skill is loaded, not a shell environment variable, so it only works in the braced `${CLAUDE_PLUGIN_ROOT}` form.
    - You are working inside a checkout of the harness-engineering repository itself (for example, running its own test suite, or Task 24's self-assessment) → the same script sits at `scripts/verify.mjs`, relative to the repo root.
    - Neither is true → this skill was installed by copying only the `skills/` directory into a different ecosystem (for example, `install.sh` into `.cursor/skills`, `.codex/skills`, `.gemini/skills`, or `.agent/skills` — none of those copy `scripts/`), so no scripts are present at all. Ask the user for the path to a harness-engineering checkout, or point them at https://github.com/huhenry/harness-engineering. Do not guess a path.
 2. Show what would run, without running it:
-   `node "$CLAUDE_PLUGIN_ROOT/scripts/verify.mjs" <repo>` (or `node scripts/verify.mjs <repo>` from a repo checkout).
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" <repo>` (or `node scripts/verify.mjs <repo>` from a repo checkout).
 3. Read the plan aloud to the user, including anything marked `blocked`.
 4. Confirm the user trusts this repository, then execute:
-   `node "$CLAUDE_PLUGIN_ROOT/scripts/verify.mjs" <repo> --run`
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" <repo> --run`
 5. Quote every command's exit code in your reply.
 6. If anything failed, report the failure — do not retry silently, and never edit the target repository's code to make a check pass while verifying.
 

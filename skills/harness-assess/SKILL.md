@@ -23,10 +23,10 @@ Score a repository's six harness subsystems and report exactly what is missing, 
 ## Workflow
 
 1. Locate the scripts, same three-way check as every harness-* skill that wraps a script:
-   - `$CLAUDE_PLUGIN_ROOT` set → `$CLAUDE_PLUGIN_ROOT/scripts/`. Normal case for an installed Claude Code plugin.
+   - `${CLAUDE_PLUGIN_ROOT}` was substituted with a real path → `${CLAUDE_PLUGIN_ROOT}/scripts/`. Normal case for an installed Claude Code plugin.
    - Working inside a harness-engineering repo checkout → `scripts/assess.mjs`, relative to the repo root.
    - Neither → this skill was installed by copying only `skills/` into another ecosystem (no `scripts/` present). Ask the user for a harness-engineering checkout path, or point them at https://github.com/huhenry/harness-engineering. Do not guess a path.
-2. Run: `node "$CLAUDE_PLUGIN_ROOT/scripts/assess.mjs" <repo>`
+2. Run: `node "${CLAUDE_PLUGIN_ROOT}/scripts/assess.mjs" <repo>`
    - `--json` for machine-readable output.
    - `--min-level <0-5>` to gate on a specific level: exits 0 if reached, 1 if not, 2 if the flag value itself isn't a valid integer 0-5.
    - `--out <file>` to write the report to a file instead of stdout.

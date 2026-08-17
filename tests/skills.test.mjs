@@ -121,6 +121,30 @@ test('skill bodies are English-only', () => {
 // scripts findable. A skill that hardcoded a bare relative path would fail
 // this test with ENOENT/MODULE_NOT_FOUND; one that never mentions a script at
 // all (the router) contributes zero matches and trivially passes.
+// How Claude Code actually makes ${CLAUDE_PLUGIN_ROOT} work, per its own
+// documentation: it performs a TEXT SUBSTITUTION on the skill's markdown when
+// loading a plugin skill, replacing the placeholder with the plugin's real
+// install directory. It does NOT export an environment variable that a Bash
+// subprocess could look up. Two consequences this test exists to pin:
+//
+//   1. Only the braced `${CLAUDE_PLUGIN_ROOT}` form is documented as being
+//      substituted. A bare `$CLAUDE_PLUGIN_ROOT` is not — and because there is
+//      no real environment variable behind it, an unsubstituted bare form does
+//      not fail loudly: the shell expands the undefined variable to the empty
+//      string and runs `node "/scripts/verify.mjs"`, which fails with a
+//      confusing ENOENT on a path the user never wrote.
+//   2. The command must work with NO such variable present in the environment,
+//      because after substitution there is nothing left to look up.
+//
+// An earlier version of this test set CLAUDE_PLUGIN_ROOT as a real env var and
+// spawned the script via a path it had already resolved in JavaScript. That
+// passed while every skill used the undocumented bare form, because it never
+// exercised substitution or shell expansion at all — green for a reason that
+// had nothing to do with how the mechanism works in production.
+function substitutePluginRoot(body, pluginRoot) {
+  return body.replaceAll('${CLAUDE_PLUGIN_ROOT}', pluginRoot);
+}
+
 test('workflow commands resolve and actually execute when the skill is installed away from scripts/', () => {
   const installed = tempDir('harness-skills-install-');
   cpSync(join(ROOT, 'skills'), installed, { recursive: true });
@@ -128,26 +152,37 @@ test('workflow commands resolve and actually execute when the skill is installed
 
   let sawAnyCommand = false;
   for (const s of SKILLS) {
-    const body = readFileSync(join(installed, s, 'SKILL.md'), 'utf8');
-    for (const m of body.matchAll(/\$CLAUDE_PLUGIN_ROOT(\/scripts\/[a-z-]+\.mjs)/g)) {
+    const raw = readFileSync(join(installed, s, 'SKILL.md'), 'utf8');
+
+    // Nothing may rely on the undocumented bare form.
+    const bare = [...raw.matchAll(/\$CLAUDE_PLUGIN_ROOT(?!\})/g)].filter(
+      (m) => raw[m.index - 1] !== '{',
+    );
+    assert.equal(bare.length, 0, `${s}: uses the undocumented bare $CLAUDE_PLUGIN_ROOT; only \${CLAUDE_PLUGIN_ROOT} is substituted`);
+
+    const body = substitutePluginRoot(raw, ROOT);
+    assert.ok(!body.includes('CLAUDE_PLUGIN_ROOT}'), `${s}: a placeholder survived substitution`);
+
+    for (const m of body.matchAll(new RegExp(`node "(${ROOT}/scripts/[a-z-]+\\.mjs)"`, 'g'))) {
       sawAnyCommand = true;
-      const scriptPath = join(ROOT, m[1]);
-      assert.ok(existsSync(scriptPath), `${s}: ${m[0]} does not resolve under the real plugin root`);
-      // Run for real, from the detached install dir (proves nothing relies on
-      // co-location with scripts/), with only CLAUDE_PLUGIN_ROOT making the
-      // script findable — the same env var Claude Code supplies to an
-      // installed plugin's skill.
-      const result = spawnSync(process.execPath, [scriptPath, join(ROOT, 'fixtures', 'good-repo')], {
+      assert.ok(existsSync(m[1]), `${s}: ${m[1]} does not exist after substitution`);
+
+      // Run the post-substitution command line THROUGH A SHELL, from the
+      // detached install dir, with CLAUDE_PLUGIN_ROOT deliberately absent —
+      // exactly the situation an installed plugin skill produces.
+      const env = { ...process.env };
+      delete env.CLAUDE_PLUGIN_ROOT;
+      const result = spawnSync('sh', ['-c', `node "${m[1]}" "${join(ROOT, 'fixtures', 'good-repo')}"`], {
         cwd: installed,
-        env: { ...process.env, CLAUDE_PLUGIN_ROOT: ROOT },
+        env,
         encoding: 'utf8',
       });
-      assert.equal(result.error, undefined, `${s}: ${m[0]} failed to spawn: ${result.error}`);
-      assert.notEqual(result.status, null, `${s}: ${m[0]} did not run to completion`);
-      assert.ok(result.stdout.includes('#'), `${s}: ${m[0]} produced no real markdown output (stderr: ${result.stderr})`);
+      assert.equal(result.error, undefined, `${s}: ${m[1]} failed to spawn: ${result.error}`);
+      assert.notEqual(result.status, null, `${s}: ${m[1]} did not run to completion`);
+      assert.ok(result.stdout.includes('#'), `${s}: ${m[1]} produced no real markdown output (stderr: ${result.stderr})`);
     }
   }
-  assert.ok(sawAnyCommand, 'no $CLAUDE_PLUGIN_ROOT script command was found in any skill — the test would pass vacuously');
+  assert.ok(sawAnyCommand, 'no ${CLAUDE_PLUGIN_ROOT} script command was found in any skill — the test would pass vacuously');
 });
 
 test('no skill relies on a bare "node scripts/..." path as its only way to find the tools', () => {
