@@ -62,8 +62,11 @@ a rule:
 Every sentence describing what a tool *does* must be something you actually ran and observed, not
 something that reads plausibly. This is the same rule the tool enforces on the repositories it
 assesses, and this project fails its own audit if the README ever says something the code doesn't
-back up — see Task 23 in `.superpowers/sdd/` for a case where the plan's own draft text had exactly
-this problem, caught before it shipped.
+back up. This is not hypothetical: the first draft of this README described the command blocklist
+as matching any command *containing* `deploy` or `prod`, when the rule is actually word-bounded
+(`prod-check` is blocked, `deployment.yaml` is not), and described `--allow` as able to release any
+blocked command, when four rules can never be overridden. Both were caught by running the code
+rather than re-reading the prose.
 
 `tests/docs.test.mjs` cross-checks the reference docs against the live rubric
 (`scripts/lib/rubric.mjs`, `scripts/lib/level.mjs`) and the live safety rules

@@ -1,18 +1,12 @@
 # Roadmap
 
 This is not a wishlist. Every item below is a real thing found and deliberately deferred during
-this project's own development (the `.superpowers/sdd/**` planning trail records each one at the
-point it was found) — not scope invented after the fact to pad this document. Each entry says
-what was found, how it was verified, and why it was not fixed in v1.
+this project's own development — not scope invented after the fact to pad this document. Each
+entry says what was found, how it was verified, and why it was not fixed in v1.
 
-A note on sourcing: this project's implementation plan referenced a project "spec" document as the
-source for this roadmap's contents. That spec is not part of this checkout (this repository's
-planning directory, `.superpowers/sdd/`, is entirely gitignored — a deliberate call, since it
-carries internal task briefs and review diffs that aren't meant to ship). This document was built
-instead from the deferred-item trail already present in that planning history (`progress.md` and
-individual task reports), each one re-verified directly against the current code before being
-listed here, plus the three items the brief for this task required verbatim. If a "spec section 15"
-existed with additional items beyond what's below, this document does not claim to reproduce it.
+The v1.1 candidates were each re-verified against the current code before being listed, so the
+file and line references below are accurate as of this release rather than as of when the item was
+first noticed. The larger directions at the end come from the project's original design document.
 
 ## v1.1 candidates
 
@@ -96,14 +90,25 @@ this task was explicitly told not to touch, and is exactly the kind of change th
 plugin-vs-non-plugin distribution story thought through deliberately rather than as a side effect
 of a docs task.
 
-## Spec section 15 (as covered by the source material available)
+## Beyond v1.1 — larger directions
 
-The plan for this task said the roadmap should cover "every item in spec section 15." As noted
-above, the spec document itself is not present in this checkout. The three items above are the
-concrete, verified candidates that exist in this project's own history under exactly that framing
-("ROADMAP v1.1 item"). If a fuller spec section 15 exists outside this repository, it was not
-available to check this document against, and this document does not claim completeness against it
-— only against what could actually be found and verified.
+These come from the project's original design document, which lives outside this repository
+(planning documents for open-source repos are kept in a sibling directory by project convention,
+so they are deliberately not part of a checkout). They are directions rather than scheduled work,
+and none of them is started.
+
+- **Graph engineering.** Multi-agent orchestration: defining a DAG of agent steps, and acceptance
+  criteria for the graph as a whole rather than for one agent at a time. The Loop subsystem in this
+  tool is the single-agent case of that idea.
+- **More stack detectors.** Rust, Java, Swift, and embedded PlatformIO. The detector table in
+  `scripts/lib/stack.mjs` is designed to be extended by adding a signature, not by editing scoring
+  logic — a new stack should not require touching any scorer.
+- **`harness diff`.** Score movement between two assessments of the same repository, so a team can
+  see whether their harness is improving rather than only what it scores today.
+- **A GitHub Action.** A marketplace action that comments the harness score delta on a pull
+  request, turning the assessment into a review-time signal instead of something someone remembers
+  to run.
+- **A web dashboard.** Assessment results across many repositories in one view.
 
 ## Other minor items noted during development (not v1.1 candidates, informational)
 
