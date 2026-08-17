@@ -1,0 +1,131 @@
+# Roadmap
+
+This is not a wishlist. Every item below is a real thing found and deliberately deferred during
+this project's own development (the `.superpowers/sdd/**` planning trail records each one at the
+point it was found) — not scope invented after the fact to pad this document. Each entry says
+what was found, how it was verified, and why it was not fixed in v1.
+
+A note on sourcing: this project's implementation plan referenced a project "spec" document as the
+source for this roadmap's contents. That spec is not part of this checkout (this repository's
+planning directory, `.superpowers/sdd/`, is entirely gitignored — a deliberate call, since it
+carries internal task briefs and review diffs that aren't meant to ship). This document was built
+instead from the deferred-item trail already present in that planning history (`progress.md` and
+individual task reports), each one re-verified directly against the current code before being
+listed here, plus the three items the brief for this task required verbatim. If a "spec section 15"
+existed with additional items beyond what's below, this document does not claim to reproduce it.
+
+## v1.1 candidates
+
+### 1. Suppress gaps that presuppose a file's existence at render time
+
+**What's wrong:** When a repository has no progress file at all, the assessment report currently
+shows both "No progress file" (`state.no-progress`) and "Progress file is stale"
+(`state.progress-stale`) in the same output — the second gap presupposes a file that the first gap
+just said doesn't exist. Confirmed directly against `fixtures/bad-repo`:
+
+```
+$ node scripts/assess.mjs fixtures/bad-repo
+...
+### State · No progress file (ROI 10)
+...
+### State · Progress file is stale (ROI 10)
+...
+```
+
+**Root cause:** `scripts/lib/scorers/ladder.mjs` collects every failing check at every rung as it
+walks bottom-up, without stopping once a lower rung's own condition (file existence) has already
+failed. `scripts/lib/scorers/state.mjs`'s rung 2 checks `fresh` and `hasAllThreeSections`
+unconditionally, even when `hasProgressFile` (rung 1) is false — so a missing file scores 0 as
+expected, but still accumulates the rung-2 gap ids into the report.
+
+**Why not fixed in v1:** Flagged by a reviewer during Task 14 and explicitly ruled out of scope by
+the controller at the time — it is a scope change (touching render/grouping logic, not a pure bug),
+and this project's standing rule requires confirmation before scope changes. Recorded then as a
+ROADMAP v1.1 item to be written here.
+
+**Candidate fix directions** (not decided — needs its own design pass): either (a) at render time,
+suppress a subsystem's rung-2+ gaps when its rung-1 file-existence gap is already present, or
+(b) change the gap text itself so `state.progress-stale`'s wording no longer implies a file exists
+("stale or missing" instead of "is stale"). (a) is closer to the existing recommendation from the
+Task 14 review discussion.
+
+### 2. A shared `MAX_SCORE` constant
+
+**What's wrong:** The top rung of every subsystem's score (`4`) is a duplicated literal, not a
+single source of truth. Confirmed directly by reading the code:
+
+- `scripts/lib/report.mjs:48` and `:64` each independently write `max: 4` / `SUBSYSTEMS.length * 4`.
+- Every one of the six scorers (`scripts/lib/scorers/{instructions,tools,environment,state,
+  feedback,loop}.mjs`) hardcodes its own top rung as `{ score: 4, checks: [...] }` inside its
+  `ladder([...])` call — six more independent copies of the same "4" with no shared constant behind
+  any of them.
+
+**Why not fixed in v1:** This project has already been bitten four times by hand-synced parallel
+lists drifting apart (see e.g. `PRUNE_DIRS`/`DEFAULT_IGNORE` in item 4 below, and the
+`docker.runtimePins`/`manifest` and `CONTAINER_FILES` fixes described in `environment.mjs`'s own
+comments). A shared `MAX_SCORE` constant is the same class of fix, but touches `report.mjs` plus
+all six scorer files — real, multi-file surface area that was correctly judged out of scope for the
+task that found it (Task 14, which owned `report.mjs` only).
+
+### 3. `install.sh` should substitute the checkout path into installed skill text
+
+**What's wrong:** `install.sh` copies only skill markdown text, never `scripts/`, into whichever
+agent-ecosystem directory it finds. Confirmed by actually running it into a temp directory:
+
+```
+$ sh install.sh
+-> .claude/skills
+installed harness-engineering skills
+NOTE: this installs skill text only. scripts/ was NOT copied, and none
+of these target directories give the harness-* skills a working path
+to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
+```
+
+None of the five target ecosystems (`.claude/skills`, `.cursor/skills`, `.codex/skills`,
+`.gemini/skills`, `.agent/skills`) get a `${CLAUDE_PLUGIN_ROOT}`-equivalent variable set, so a
+skill's documented `node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` command cannot resolve after a
+plain `install.sh` run — the installed skill has to ask the user for a checkout path the first time
+it actually needs to run a command. See the [README's Install section](README.md#install) for the
+user-facing version of this limitation.
+
+**Why not fixed in v1:** Flagged during Task 22 as a real, buildable fix — `install.sh` could know
+its own source checkout path (`HARNESS_SRC`/`$(dirname "$0")`, which it already computes) and
+substitute that absolute path into the installed `SKILL.md` text in place of the
+`${CLAUDE_PLUGIN_ROOT}` placeholder — but it is a scope change to `install.sh`'s behavior, which
+this task was explicitly told not to touch, and is exactly the kind of change that needs the
+plugin-vs-non-plugin distribution story thought through deliberately rather than as a side effect
+of a docs task.
+
+## Spec section 15 (as covered by the source material available)
+
+The plan for this task said the roadmap should cover "every item in spec section 15." As noted
+above, the spec document itself is not present in this checkout. The three items above are the
+concrete, verified candidates that exist in this project's own history under exactly that framing
+("ROADMAP v1.1 item"). If a fuller spec section 15 exists outside this repository, it was not
+available to check this document against, and this document does not claim completeness against it
+— only against what could actually be found and verified.
+
+## Other minor items noted during development (not v1.1 candidates, informational)
+
+These were logged as non-blocking during earlier tasks and re-verified directly against the current
+code while writing this document. They are listed for transparency, not because they're queued for
+a release.
+
+- **`PRUNE_DIRS` / `DEFAULT_IGNORE` remain two hand-synced lists.** `scripts/lib/scan.mjs:7` and
+  `:10` define `DEFAULT_IGNORE` (glob patterns) and `PRUNE_DIRS` (a `Set` of bare directory names)
+  separately; editing one without the other could silently reintroduce a directory-walk leak.
+  Verified still present by reading the file directly. Noted as a minor risk since Task 4; not
+  urgent enough to have been folded into item 2 above, but the same underlying class of risk.
+- **A cosmetic inconsistency in the example fixtures.** `fixtures/good-repo/go.sum` and
+  `fixtures/mid-repo/go.sum` both pin `github.com/lib/pq` with no matching `require` line in the
+  corresponding `go.mod` and no import in `main.go`. Verified still present by reading both files
+  directly. Harmless — these are fixtures for scoring logic, not compiled — but noted as a batch
+  cleanup candidate the same way it was noted during Task 13.
+
+## Known, deliberately-accepted limits (not roadmap items)
+
+The safety module (`scripts/lib/safety.mjs`) has a documented, structural ceiling — not a bug
+queue. See the [README's Safety section](README.md#safety) and
+`skills/harness-verify/SKILL.md`'s Limitations section for the full statement. These are listed
+there, not here, because the project's own conclusion after seven rounds of adversarial review was
+that the right next step is disclosure, not another round of patching.
