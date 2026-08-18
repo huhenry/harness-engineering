@@ -133,6 +133,23 @@ Run `assess` again after `verify --run` and watch Feedback (and, once a bootstra
 declared, Environment) move from `capped — run verify --run for evidence` to a real score backed by
 a real exit code.
 
+## Exit codes
+
+These are a stable interface — this project's own CI gates on them, and the first command above
+deliberately exits `1` because `fixtures/bad-repo` is a repository with real high-severity gaps.
+A non-zero exit here means "the repository has a problem", not "the tool broke".
+
+| Code | `assess` | `verify` | `scaffold` |
+| --- | --- | --- | --- |
+| `0` | `--min-level` met, or no high-severity gaps when no level was requested | every command passed (dry-run: every command was planned) | dry-run, or `--apply` wrote everything it planned |
+| `1` | `--min-level` not met, or high-severity gaps found | any command failed, timed out, or was blocked | a write failed, or a template was missing |
+| `2` | usage error (a bad flag or value) | usage error | usage error |
+| `3` | unexpected internal error | unexpected internal error | unexpected internal error |
+
+`2` and `3` are deliberately distinct: a mistyped flag and a crash in the tool should never be
+indistinguishable to a script, and neither should be confused with `1`, which is a successful run
+reporting a real result about your repository.
+
 ## The six subsystems
 
 | Subsystem | What it checks |
