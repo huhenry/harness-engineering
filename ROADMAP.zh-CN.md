@@ -80,6 +80,42 @@ to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
 行为的范围变更，而本任务被明确要求不许动 `install.sh`，而且这也正是那种需要专门坐下来想清楚
 "插件形态 vs 非插件形态该怎么分发"的问题，不该是文档任务的副产品。
 
+### 4. 模板文件不应该满足它自己作为模板的那条检查
+
+**问题在哪：** `state.mjs` 是按任意深度去找交接类文件的：
+
+```js
+function existsAnyDepth(ctx, name) {
+  return ctx.exists(name) || ctx.list([`**/${name}`]).length > 0;
+}
+```
+
+"任意深度"这个设计本身是对的——一个把交接文档放在 `docs/session-handoff.md` 的仓库，
+理应拿到这一分。错的是：**一份还没填写的模板，也被当成了真实产出物。** 在本仓库实测：
+
+```
+session-handoff.md       -> ["session-handoff.md",
+                             "templates/en/session-handoff.md",
+                             "templates/zh/session-handoff.md"]
+clean-state-checklist.md -> ["clean-state-checklist.md",
+                             "templates/en/clean-state-checklist.md",
+                             "templates/zh/clean-state-checklist.md"]
+```
+
+也就是说，一个仅仅把这些模板 vendor 进去的仓库——或者它自己的 `templates/` 目录里恰好有个同名
+文件——不用真写一份交接文档，就能过掉 `state.no-handoff`。对一把"价值全在于不给不存在的东西
+发分"的尺子来说，这是实打实的误判。
+
+**关于本仓库自己的分数：** 这个漏洞没有把我们的分数抬高。根目录下的 `session-handoff.md` 和
+`clean-state-checklist.md` 是真实填写过的文件（在上面的列表里排在第一个），所以不管模板在不在，
+状态子系统都是 4 分。这一点是在挂出 L5 徽章之前专门查过的——一份自己给自己注水的体检，
+比没有徽章更糟。
+
+**为什么 v1 没修：** 修法不是简单地"把 `templates/` 排除掉"——那只是给一个目录名开特例，
+真正的问题（占位符被当成内容）还在。更像样的做法大概是：让评分器拒绝那些仍然含有未填写
+`FILL:` 占位符的文件。但这会改变好几个评分器里"文件存在"的含义，需要配套的 fixture 覆盖。
+这是 Task 24 的实现者发现并主动报告的，而不是闷声享受这几分。
+
 ## v1.1 之后：更大的方向
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，
