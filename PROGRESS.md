@@ -15,11 +15,11 @@ should be able to trust it instead of re-deriving state from the diff.
   evidence-writing entrypoint.
 - Tasks 19-23: bilingual templates (16 files x 2 languages), `scaffold.mjs`, the five
   `harness-*` skills, the Claude Code plugin manifest + `install.sh`, bilingual README/ROADMAP.
-- Task 24 (this one, dogfooding): ran this tool on this repository, went from L0 (3/24) to a real,
-  evidence-backed L4, and wrote the CI workflow, self-assessment gate and `harness-badge.json` that
-  keep it there. See `session-handoff.md` for the exact state this session left behind and
-  `.superpowers/sdd/2026-08-10-harness-engineering-implementation-plan/task-24-report.md` for the
-  full TDD evidence, acceptance-criteria run, and the PlantCare drill.
+- Task 24 (this one, dogfooding): ran this tool on this repository, went from L0 (3/24) to an
+  evidence-backed L5 (23/24), and wrote the CI workflow, self-assessment gate and
+  `harness-badge.json` that keep it there. The remaining point is Feedback, which is at 3/4 for
+  two honest reasons: this project has no end-to-end suite and no runtime to observe. See
+  `session-handoff.md` for the exact state this session left behind.
 
 ## In Progress
 

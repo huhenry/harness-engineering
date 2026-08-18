@@ -4,7 +4,7 @@
 # .cursor/skills, .codex/skills, .gemini/skills, .agent/skills); if none of
 # those exist yet, default to creating .claude/skills.
 #
-# Honest limitation (see .superpowers/sdd task-22 report, brief section B1):
+# Honest limitation:
 # this only copies skill TEXT. It never copies scripts/, and none of the
 # five target ecosystems get a $CLAUDE_PLUGIN_ROOT-equivalent variable set
 # for a script-relative-path scheme to anchor on -- so the harness-* skills'

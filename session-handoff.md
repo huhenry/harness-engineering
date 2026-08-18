@@ -16,10 +16,8 @@ a real `init.sh` bootstrap script, `.devcontainer/devcontainer.json`, `harness-b
 `verify --run` then `assess --min-level 4` then refreshes the badge on `main`). Ran
 `node scripts/verify.mjs . --run` for real against the declared `bootstrap`/`test`/`lint` commands
 and `node scripts/assess.mjs . --min-level 4` against the resulting evidence. Also ran the
-PlantCare drill (assess + scaffold dry-run against a copy of `/Users/henryhu/workingon/PlantCare`,
-diffed against the original to prove read-only behavior). Full evidence, command output, and the
-honest list of what could and could not be verified are in
-`.superpowers/sdd/2026-08-10-harness-engineering-implementation-plan/task-24-report.md`.
+end-to-end drill on a real, unrelated multi-language repository (assess + scaffold dry-run against
+a copy, then diffed against the original to prove both tools left it untouched).
 
 ## Next session
 
