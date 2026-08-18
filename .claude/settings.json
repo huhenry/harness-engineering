@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(make:*)",
+      "Bash(node --test)",
+      "Bash(node --test tests/*.mjs)",
+      "Bash(node --check *)",
+      "Bash(node scripts/assess.mjs *)",
+      "Bash(node scripts/scaffold.mjs *)",
+      "Bash(node scripts/verify.mjs *)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(sudo:*)"
+    ]
+  }
+}

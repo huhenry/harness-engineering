@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 *.harness-proposed
 .harness/tmp/
+# Written by `assess.mjs . --out self-report.md` in CI's self-assess job
+# (.github/workflows/ci.yml) -- ephemeral per-run output, never committed.
+self-report.md

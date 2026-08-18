@@ -1,0 +1,78 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+# The self-assess job's badge-refresh step commits and pushes
+# harness-badge.json back to main. GitHub's default GITHUB_TOKEN for a
+# newly created repository is read-only, and without this the push fails
+# with 403 -- leaving main's own CI permanently red on the exact task whose
+# entire point is proving this repository's CI is green. See
+# task-24-brief.md section B2.
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ matrix.node-version }}' }
+      - run: node --test
+
+  self-assess:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      # verify must run before assess: .harness/verify-report.json is the
+      # evidence assess's Feedback rung 3 and the L4 gate both read back.
+      # Reversing this order would leave assess reading stale-or-missing
+      # evidence and failing the min-level gate on a checkout that actually
+      # has everything it needs -- a self-inflicted failure of exactly the
+      # kind this project exists to prevent.
+      - name: Verify our own declared checks
+        run: node scripts/verify.mjs . --run
+      - name: Assess ourselves
+        run: node scripts/assess.mjs . --min-level 4 --out self-report.md
+      - name: Refresh badge
+        # always(): the badge must stay honest even when "Assess ourselves"
+        # fails the --min-level 4 gate (or "Verify our own declared checks"
+        # fails first) -- verify.mjs still writes .harness/verify-report.json
+        # on a failing run, so a fresh `assess --json` here can read real,
+        # current evidence either way. Refreshing only on success would let
+        # the badge keep claiming a level this repository no longer holds,
+        # which is exactly the dishonest-signal failure mode this project
+        # exists to prevent.
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          node scripts/assess.mjs . --json > "$RUNNER_TEMP/report.json"
+          node -e '
+            const fs = require("fs");
+            const r = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/report.json", "utf8"));
+            const color = r.level.id >= 4 ? "brightgreen" : r.level.id >= 2 ? "yellow" : "red";
+            fs.writeFileSync("harness-badge.json", JSON.stringify({
+              schemaVersion: 1,
+              label: "harness level",
+              message: `L${r.level.id} (${r.score.total}/${r.score.max})`,
+              color,
+            }, null, 2) + "\n");
+          '
+          # Only the badge is ever staged here, deliberately -- verify/assess
+          # may have touched other untracked files in this workspace (e.g.
+          # self-report.md), and `git add harness-badge.json` (not `-A` or
+          # `commit -am`) is what keeps this step from accidentally
+          # committing any of them. See task-24-brief.md section B2.
+          if ! git diff --quiet harness-badge.json; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add harness-badge.json
+            git commit -m "chore: refresh harness badge [skip ci]"
+            git push
+          fi

@@ -1,4 +1,9 @@
 {
   "lang": "en",
+  "verify": {
+    "bootstrap": "./init.sh",
+    "test": "node --test",
+    "lint": "node --check scripts/assess.mjs scripts/scaffold.mjs scripts/verify.mjs"
+  },
   "ignore": ["fixtures/**"]
 }
