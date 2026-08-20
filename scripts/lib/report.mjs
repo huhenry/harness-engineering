@@ -30,11 +30,11 @@ export function buildReport({
 
   const subsystems = SUBSYSTEMS.map((id) => {
     const r = results[id];
-    // ROADMAP#1: drop any gap whose precondition gap is also present in this
-    // same subsystem — reporting "Progress file is stale" alongside "No
-    // progress file" tells the user about a file the report just said does
-    // not exist. Filtered here at render time, not in ladder.mjs: the score
-    // is a fact about which rungs failed and must not move.
+    // Drop any gap whose precondition gap is also present in this same
+    // subsystem — reporting "Progress file is stale" alongside "No progress
+    // file" tells the user about a file the report just said does not
+    // exist. Filtered here at render time, not in ladder.mjs: the score is
+    // a fact about which rungs failed and must not move.
     const present = new Set(r.gapIds);
     const visibleGapIds = r.gapIds.filter((gapId) => {
       const pre = gapById(gapId).presupposedBy;

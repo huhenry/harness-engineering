@@ -49,13 +49,13 @@ export function validateFeatureList(data) {
  *   - 'filled'   -- at least one copy exists and is a real, filled-in
  *                   artefact.
  *
- * The any-depth search is deliberate and unchanged from before ROADMAP#4's
- * fix — a repository keeping its handoff doc at docs/session-handoff.md
- * should get credit for it. A repository can have BOTH a leftover
- * vendored/unfilled copy (e.g. under templates/) AND its own real,
- * filled-in copy elsewhere; that combination classifies as 'filled', since
- * every candidate path is checked rather than stopping at the first one
- * found — this preserves exactly what the old boolean `hasHandoff`/
+ * The any-depth search is deliberate and unchanged from before this file
+ * gained placeholder detection — a repository keeping its handoff doc at
+ * docs/session-handoff.md should get credit for it. A repository can have
+ * BOTH a leftover vendored/unfilled copy (e.g. under templates/) AND its own
+ * real, filled-in copy elsewhere; that combination classifies as 'filled',
+ * since every candidate path is checked rather than stopping at the first
+ * one found — this preserves exactly what the old boolean `hasHandoff`/
  * `hasChecklist` computed (see git history) before this function split that
  * boolean into three states so 'absent' and 'unfilled' can be told apart.
  *

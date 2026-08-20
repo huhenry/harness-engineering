@@ -155,9 +155,9 @@ const REPORT_ARGS = {
   verifiedAt: null, toolVersion: '0.1.0', now: new Date('2026-08-20T00:00:00Z'), lang: 'en',
 };
 
-// ROADMAP#1: "No progress file" and "Progress file is stale" used to appear
-// in the same report — the second presupposes a file the first just said
-// does not exist.
+// "No progress file" and "Progress file is stale" used to appear in the
+// same report — the second presupposes a file the first just said does not
+// exist.
 test('gaps that presuppose a missing file are suppressed when it is missing', () => {
   const report = buildReport({
     ...REPORT_ARGS,
@@ -193,4 +193,22 @@ test('the rendered markdown no longer shows both progress gaps at once', () => {
   const md = renderMarkdown(report, 'en');
   assert.ok(md.includes('No progress file'));
   assert.ok(!/Progress file is stale/.test(md));
+});
+
+// Fix round 1, Finding 1: state.no-handoff and state.handoff-unfilled are
+// NOT a presupposing pair, even though tests/scorers/state.test.mjs already
+// proves the scorer can emit both together (one handoff artefact absent,
+// the other present-but-unfilled -- two distinct real problems about two
+// different files, not one gap presupposing what the other denies; see the
+// comment on state.handoff-unfilled's def() in rubric.mjs). Nothing before
+// this test exercised that pair through buildReport, so a future
+// presupposedBy edit wiring these two together would have silently
+// regressed with no test catching it.
+test('state.no-handoff and state.handoff-unfilled both survive un-suppressed', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-handoff', 'state.handoff-unfilled']),
+  });
+  const ids = report.subsystems.find((s) => s.id === 'state').gaps.map((g) => g.id);
+  assert.deepEqual(new Set(ids), new Set(['state.no-handoff', 'state.handoff-unfilled']));
 });

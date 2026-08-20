@@ -3,11 +3,12 @@ export const SUBSYSTEMS = ['instructions', 'tools', 'environment', 'state', 'fee
 /**
  * `presupposedBy` names another gap in the SAME subsystem whose presence
  * makes this one meaningless — "Progress file is stale" presupposes a
- * progress file, which "No progress file" just said does not exist
- * (ROADMAP#1). Declared here rather than hardcoded in report.mjs so a future
- * pair is one line in this table, not a new branch in the renderer. It is a
- * RENDER-time relationship only: ladder.mjs still collects every failing
- * check, and scores are unaffected.
+ * progress file, which "No progress file" just said does not exist, so
+ * showing both in the same report asserts a contradiction. Declared here
+ * rather than hardcoded in report.mjs so a future pair is one line in this
+ * table, not a new branch in the renderer. It is a RENDER-time relationship
+ * only: ladder.mjs still collects every failing check, and scores are
+ * unaffected.
  */
 const def = (id, severity, effort, templates = [], presupposedBy = null) => ({
   id,

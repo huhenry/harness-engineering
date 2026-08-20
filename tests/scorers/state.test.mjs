@@ -325,8 +325,8 @@ function rungThreeFiles(extra = {}) {
   };
 }
 
-// ROADMAP#4: a repository that merely vendors this project's templates must
-// not pass state.no-handoff without ever writing a real handoff document.
+// A repository that merely vendors this project's templates must not pass
+// state.no-handoff without ever writing a real handoff document.
 // Finding 3 (fix round 1): both artefacts here EXIST -- they are just
 // unfilled -- so classifyHandoffArtefact reports 'unfilled', not 'absent',
 // and the ladder must fire state.handoff-unfilled, not state.no-handoff.

@@ -59,9 +59,9 @@ test('a file byte-identical to a shipped zh template is not a filled artefact (R
 });
 
 // The case Rule A alone cannot catch: this template carries no FILL: marker
-// at all, so only the byte-identity rule stops it counting. ROADMAP#4 named
-// BOTH session-handoff.md and clean-state-checklist.md -- Rule A only covers
-// the first one.
+// at all, so only the byte-identity rule stops it counting. The state
+// scorer's handoff check covers BOTH session-handoff.md and
+// clean-state-checklist.md -- Rule A only covers the first one.
 test('clean-state-checklist.md needs rule B: the template has no FILL: marker', () => {
   const text = readFileSync(join(ROOT, 'templates', 'en', 'clean-state-checklist.md'), 'utf8');
   assert.ok(!text.includes('FILL:'), 'precondition: this template has no FILL: marker');

@@ -42,3 +42,21 @@ test('gapById throws on unknown id', () => {
   assert.equal(gapById('loop.none').subsystem, 'loop');
   assert.throws(() => gapById('nope.nope'), /Unknown gap id/);
 });
+
+// Fix round 1, Finding 2: report.mjs's suppression filter (buildReport)
+// looks up `presupposedBy` and compares its subsystem membership only via
+// `r.gapIds`, which happens to be subsystem-local by construction -- nothing
+// stops a future entry from naming a gap in a DIFFERENT subsystem, or a
+// typo'd/nonexistent id. Either mistake fails silently and safely: no
+// crash, no test signal, no suppression ever taking effect, and a
+// maintainer who believes it works. This test walks the whole table once
+// and makes that failure mode impossible to land unnoticed.
+test('every presupposedBy names a real gap in the SAME subsystem', () => {
+  for (const g of GAPS) {
+    if (g.presupposedBy === null) continue;
+    const pre = GAPS.find((other) => other.id === g.presupposedBy);
+    assert.ok(pre, `${g.id}'s presupposedBy ('${g.presupposedBy}') does not name a gap in GAPS`);
+    assert.equal(pre.subsystem, g.subsystem,
+      `${g.id} (${g.subsystem}) presupposedBy points at ${pre.id} (${pre.subsystem}) -- must be same subsystem`);
+  }
+});

@@ -149,14 +149,15 @@ function allShippedTemplateTexts() {
 
 /**
  * True when `rel` is a real, filled-in artefact rather than an unfilled
- * placeholder — the distinction ROADMAP#4 says the scorers were missing.
+ * placeholder — a distinction the scorers used to be missing entirely: a
+ * repository that only ever vendored this project's own unfilled templates
+ * could score as if it had written real content.
  *
  * Deliberately NOT "exclude anything under templates/": that would
  * special-case one directory name and leave the general problem (a
- * placeholder counting as content) untouched, which is exactly the fix
- * ROADMAP#4 rules out. Both rules here are about the file's CONTENT, so a
- * repository keeping placeholders anywhere — templates/, docs/, examples/,
- * the root — is judged the same way.
+ * placeholder counting as content) untouched. Both rules here are about the
+ * file's CONTENT, so a repository keeping placeholders anywhere —
+ * templates/, docs/, examples/, the root — is judged the same way.
  *
  * `ctx` is a scan.mjs scan context; only `ctx.read` is used.
  */

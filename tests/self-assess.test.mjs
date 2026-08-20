@@ -108,13 +108,13 @@ test('no scaffolded harness file in this repository still has an unfilled FILL: 
   }
 });
 
-// ROADMAP#4's fix (placeholder.mjs) makes an unfilled template stop counting
-// as a real artefact. This repository ships templates/ AND has its own real,
-// filled-in session-handoff.md and clean-state-checklist.md at the root —
-// verified before the fix landed: neither root file contains a FILL: marker,
-// and neither is byte-identical to its template. This test is the guard that
-// a future edit to either file (or to placeholder.mjs's rules) does not
-// silently knock this repository's own State score down.
+// The placeholder-detection fix (placeholder.mjs) makes an unfilled template
+// stop counting as a real artefact. This repository ships templates/ AND has
+// its own real, filled-in session-handoff.md and clean-state-checklist.md at
+// the root — verified before the fix landed: neither root file contains a
+// FILL: marker, and neither is byte-identical to its template. This test is
+// the guard that a future edit to either file (or to placeholder.mjs's
+// rules) does not silently knock this repository's own State score down.
 test('this repository still scores State 4 under the placeholder rule', () => {
   const r = runAssess({ repoPath: ROOT, lang: 'en', now: new Date() });
   const state = r.subsystems.find((s) => s.id === 'state');
