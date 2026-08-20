@@ -42,10 +42,22 @@ for t in $TARGETS; do
   # ecosystems set a $CLAUDE_PLUGIN_ROOT-equivalent variable, so without this
   # the installed skills' documented commands cannot resolve.
   #
+  # Enumerate the skill directory NAMES from "$SRC"/skills/ and only touch
+  # "$t/<that name>/SKILL.md" -- do NOT glob "$t"/*/SKILL.md. ${CLAUDE_PLUGIN_ROOT}
+  # is a general Claude Code convention, not proprietary to this repo, so a
+  # destination-glob would also rewrite any unrelated third-party skill that
+  # happens to already live in the same target directory (e.g. .claude/skills),
+  # silently pointing its commands at THIS checkout's path. Scoping to exactly
+  # the directories this script just copied keeps every other file in the
+  # target directory byte-identical, no exceptions.
+  #
   # `sed > tmp && mv` rather than `sed -i`: -i needs a suffix argument on BSD
   # sed and rejects one attached differently on some GNU builds, and this
   # script is tested under dash for POSIX compliance.
-  for f in "$t"/*/SKILL.md; do
+  for skill_dir in "$SRC"/skills/*/; do
+    skill=${skill_dir%/}
+    skill=${skill##*/}
+    f="$t/$skill/SKILL.md"
     [ -f "$f" ] || continue
     sed "s|\${CLAUDE_PLUGIN_ROOT}|$ESC_SRC|g" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   done

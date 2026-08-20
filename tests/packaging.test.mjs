@@ -296,13 +296,54 @@ test('the source checkout is not mutated by installing', () => {
 });
 
 test('a checkout path containing shell-special characters survives substitution', () => {
-  // sed's replacement text treats & and \ specially and the delimiter must
-  // not appear unescaped. A real path can legitimately contain '&'.
-  const weird = tempDir('harness-src-a&b-');
+  // sed's replacement text treats &, |, and \ specially -- & means "the whole
+  // match", \ is the escape character, and | is the delimiter install.sh's
+  // sed command uses. All three must be escaped once, up front, or a real
+  // path containing any of them would corrupt the substitution or break the
+  // sed command's own syntax. Cover all three characters install.sh's own
+  // escape class ([&|\\]) claims to handle, not just '&' -- a fix round 1
+  // review found this test only exercised '&', leaving '|' and '\' untested
+  // (not a live bug -- hand-verified to round-trip correctly -- but the gap
+  // itself was real).
+  const weird = tempDir('harness-src-a&b|c\\d-');
   cpSync(join(ROOT, 'skills'), join(weird, 'skills'), { recursive: true });
   cpSync(join(ROOT, 'install.sh'), join(weird, 'install.sh'));
   const dst = tempDir('harness-install-weird-');
   execFileSync('sh', [join(weird, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: weird } });
   const text = readFileSync(join(dst, '.claude', 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
   assert.ok(text.includes(`${weird}/scripts/assess.mjs`), 'the literal path must land intact');
+});
+
+// Fix round 1 finding 1 (Important, bordering Critical): install.sh's
+// substitution loop used to glob "$t"/*/SKILL.md at the DESTINATION, which
+// matches every SKILL.md in the target directory -- not just the five this
+// script just copied. ${CLAUDE_PLUGIN_ROOT} is a general Claude Code
+// convention, not proprietary to this repo, so any third-party skill already
+// installed alongside harness-engineering's own (e.g. sharing .claude/skills)
+// got silently rewritten too, pointing its commands at a path inside THIS
+// checkout that has nothing to do with it. This project leads with the
+// guarantee that it never overwrites a file it did not ship; an installer
+// that silently corrupts an unrelated stranger's file breaks that promise
+// outright. The fix scopes the substitution to exactly the skill directory
+// names enumerated from "$SRC"/skills/, never a destination glob.
+test('install.sh never touches a foreign skill\'s SKILL.md sharing the same target directory', () => {
+  const dst = tempDir('harness-install-foreign-');
+  const foreignDir = join(dst, '.claude', 'skills', 'some-other-tool');
+  mkdirSync(foreignDir, { recursive: true });
+  const foreignPath = join(foreignDir, 'SKILL.md');
+  const foreignBefore = '---\nname: some-other-tool\n---\n\nRun: node "${CLAUDE_PLUGIN_ROOT}/their/tool.mjs"\n';
+  writeFileSync(foreignPath, foreignBefore);
+
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+
+  const foreignAfter = readFileSync(foreignPath, 'utf8');
+  assert.equal(foreignAfter, foreignBefore, 'install.sh must never rewrite a SKILL.md it did not ship, byte-identical or not at all');
+
+  // Sanity: the five shipped skills still got their real substitution in the
+  // same run, proving this isn't passing by accident (e.g. the loop silently
+  // doing nothing at all).
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    assert.ok(!text.includes('${CLAUDE_PLUGIN_ROOT}'), `${skill}/SKILL.md should still be substituted`);
+  }
 });
