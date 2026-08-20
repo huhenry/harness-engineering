@@ -39,16 +39,35 @@ export function validateFeatureList(data) {
 }
 
 /**
+ * The two artefacts the rung-4 handoff check is about, and the evidence note
+ * each one earns once it is genuinely filled in. Single source for the
+ * classification loop, the evidence list and the per-gap attribution below,
+ * so no two of those three can drift apart the way this codebase's
+ * hand-synced lists have four times before.
+ */
+const HANDOFF_ARTEFACTS = [
+  { name: 'session-handoff.md', note: 'handoff doc' },
+  { name: 'clean-state-checklist.md', note: 'checklist' },
+];
+
+/**
  * Classify a handoff artefact's presence at the repo root or at any depth
- * beneath it, as one of:
+ * beneath it, returning `{ state, path }` where `state` is one of:
  *
  *   - 'absent'   -- no file named `name` exists anywhere in the repository.
- *   - 'unfilled' -- at least one copy exists, but every copy is still a
- *                   placeholder (an unreplaced `FILL:` marker, or
- *                   byte-identical to one of this project's shipped
- *                   templates -- see placeholder.mjs's isFilledArtifact).
+ *                   `path` is null: there is no file to point at.
+ *   - 'unfilled' -- at least one copy exists, but no copy reads as filled in
+ *                   (see placeholder.mjs's isFilledArtifact). `path` is the
+ *                   first copy found, so the report can name a real path.
  *   - 'filled'   -- at least one copy exists and is a real, filled-in
- *                   artefact.
+ *                   artefact. `path` is that copy.
+ *
+ * `path` exists so the report can attribute each of the two rung-4 gaps to
+ * the specific artefact that caused it. Before it did, a repository with one
+ * artefact missing and the other still a template got both gap ids, each
+ * naming BOTH files unconditionally -- so the same report told the user to
+ * open a file it had just said was missing, and to add a file that was
+ * already there.
  *
  * The any-depth search is deliberate and unchanged from before this file
  * gained placeholder detection — a repository keeping its handoff doc at
@@ -68,11 +87,11 @@ export function validateFeatureList(data) {
 function classifyHandoffArtefact(ctx, name) {
   const candidates = new Set(ctx.list([`**/${name}`]));
   if (ctx.exists(name)) candidates.add(name);
-  if (candidates.size === 0) return 'absent';
+  if (candidates.size === 0) return { state: 'absent', path: null };
   for (const rel of candidates) {
-    if (isFilledArtifact(ctx, rel)) return 'filled';
+    if (isFilledArtifact(ctx, rel)) return { state: 'filled', path: rel };
   }
-  return 'unfilled';
+  return { state: 'unfilled', path: [...candidates][0] };
 }
 
 export function score({ ctx, now }) {
@@ -97,18 +116,20 @@ export function score({ ctx, now }) {
   const featureListData = hasFeatureListFile ? ctx.readJson('feature_list.json') : null;
   const featureListValid = hasFeatureListFile && validateFeatureList(featureListData).length === 0;
 
-  const handoffState = classifyHandoffArtefact(ctx, 'session-handoff.md');
-  const checklistState = classifyHandoffArtefact(ctx, 'clean-state-checklist.md');
-  const hasHandoff = handoffState === 'filled';
-  const hasChecklist = checklistState === 'filled';
+  const handoff = HANDOFF_ARTEFACTS.map((a) => ({ ...a, ...classifyHandoffArtefact(ctx, a.name) }));
+  const namesInState = (s) => handoff.filter((a) => a.state === s).map((a) => a.name);
+  const absentArtefacts = namesInState('absent');
+  const unfilledArtefacts = namesInState('unfilled');
   // state.no-handoff fires when either artefact is missing outright;
   // state.handoff-unfilled fires when every existing copy of either
   // artefact is still a placeholder. A repository can trip both at once
   // (one artefact absent, the other present-but-unfilled) -- that is an
   // accurate report of two distinct problems, not a bug, so the two checks
-  // below are independent rather than one superseding the other.
-  const anyHandoffAbsent = handoffState === 'absent' || checklistState === 'absent';
-  const anyHandoffUnfilled = handoffState === 'unfilled' || checklistState === 'unfilled';
+  // below are independent rather than one superseding the other. Which
+  // artefact caused which gap is carried through in gapVars below, so the
+  // two texts name different files instead of both naming both.
+  const anyHandoffAbsent = absentArtefacts.length > 0;
+  const anyHandoffUnfilled = unfilledArtefacts.length > 0;
   // Only AGENTS.md is checked here (not CLAUDE.md as instructions/tools do)
   // — the table names AGENTS.md specifically for the session-lifecycle
   // check. This is a plain full-text search over the raw body, not a
@@ -141,8 +162,17 @@ export function score({ ctx, now }) {
     const count = Array.isArray(featureListData?.features) ? featureListData.features.length : 0;
     evidence.push({ kind: 'file', path: 'feature_list.json', note: featureListValid ? `${count} features` : 'invalid' });
   }
-  if (hasHandoff) evidence.push({ kind: 'file', path: 'session-handoff.md', note: 'handoff doc' });
-  if (hasChecklist) evidence.push({ kind: 'file', path: 'clean-state-checklist.md', note: 'checklist' });
+  // Every handoff artefact that exists on disk is recorded, not only the
+  // filled ones, and at the path it was actually found at rather than at
+  // its canonical root name. An unfilled artefact is a real file the user
+  // can open; leaving it out of the evidence array made the JSON report
+  // indistinguishable from one where the file was missing outright, which
+  // is precisely the distinction state.handoff-unfilled exists to draw.
+  // 'absent' contributes nothing: there is no path to point at.
+  for (const a of handoff) {
+    if (a.state === 'absent') continue;
+    evidence.push({ kind: 'file', path: a.path, note: a.state === 'filled' ? a.note : 'unfilled template' });
+  }
   if (lifecycleDocumented) evidence.push({ kind: 'file', path: 'AGENTS.md', note: 'session lifecycle documented' });
 
   // Every condition in this table is a fact about repository state (file
@@ -150,5 +180,15 @@ export function score({ ctx, now }) {
   // on whether some command was actually run and observed to pass, unlike
   // Environment's bootstrap-verification rung. So state scoring never needs
   // evidence-capping: cappedByEvidence is always false here.
-  return { score, cappedByEvidence: false, evidence, gapIds };
+  //
+  // gapVars carries per-gap interpolation values through to buildReport, so
+  // the two handoff gaps can each name the artefact that actually caused
+  // them. Only supplied for a gap that is genuinely in gapIds; buildReport
+  // throws if a message needs a variable nobody supplied, so an unsupplied
+  // key can never silently render as a literal "{artefacts}".
+  const gapVars = {};
+  if (anyHandoffAbsent) gapVars['state.no-handoff'] = { artefacts: absentArtefacts.join(', ') };
+  if (anyHandoffUnfilled) gapVars['state.handoff-unfilled'] = { artefacts: unfilledArtefacts.join(', ') };
+
+  return { score, cappedByEvidence: false, evidence, gapIds, gapVars };
 }

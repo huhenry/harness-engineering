@@ -113,11 +113,21 @@ export const MESSAGES = {
     'gap.state.feature-list-invalid.why': "A feature list that fails its own schema breaks any tooling that reads it, and the agent can no longer trust the declared scope of work.",
     'gap.state.feature-list-invalid.fix': 'Validate feature_list.json against feature_list.schema.json and fix entries until it validates clean.',
     'gap.state.no-handoff.title': 'No session handoff doc',
-    'gap.state.no-handoff.why': "Without a handoff protocol, context that only ever lived in one session's head disappears the moment that session ends.",
-    'gap.state.no-handoff.fix': 'Add a session-handoff.md template and a clean-state-checklist.md the agent fills in before ending a session.',
+    'gap.state.no-handoff.why': "Missing handoff artefacts: {artefacts}. Without a handoff protocol, context that only ever lived in one session's head disappears the moment that session ends.",
+    'gap.state.no-handoff.fix': 'Add {artefacts}, and fill in what actually happened before ending the session.',
     'gap.state.handoff-unfilled.title': 'Handoff doc exists but is still an unfilled template',
-    'gap.state.handoff-unfilled.why': "session-handoff.md or clean-state-checklist.md is present, but every copy of it still carries an unreplaced FILL: placeholder or is byte-identical to this project's shipped template — the file exists, but nobody has actually recorded what happened.",
-    'gap.state.handoff-unfilled.fix': 'Open the existing session-handoff.md / clean-state-checklist.md and replace every FILL: placeholder with what actually happened this session — do not scaffold again, the file is already there.',
+    // Deliberately does NOT assert a single reason. The check that fires
+    // this gap answers one question -- "does any copy read as filled in?" --
+    // and three different states answer it no: an unreplaced FILL: marker,
+    // the shipped template carrying nothing but scaffold's own provenance
+    // line (byte-identity is compared AFTER that line is stripped, so a
+    // scaffolded file is never literally byte-identical), and a file this
+    // tool could not read at all. Naming only the first two made the
+    // sentence false in the single most common state a user meets this gap
+    // in -- a `scaffold --apply`'d clean-state-checklist.md, which has no
+    // FILL: marker in either language and is not byte-identical either.
+    'gap.state.handoff-unfilled.why': "Handoff artefacts that exist but were never filled in: {artefacts}. Every copy found either still carries an unreplaced FILL: marker, or is this project's shipped template with nothing added but scaffold's own provenance line, or could not be read at all — so nothing on disk records what actually happened.",
+    'gap.state.handoff-unfilled.fix': 'Replace every FILL: placeholder and any leftover template text in {artefacts} with what actually happened this session. Do not scaffold again — scaffold never overwrites, so it would only add a .harness-proposed sibling. If this tool could not read what is on disk, fix the permissions first.',
     'gap.state.lifecycle-undocumented.title': 'State file lifecycle undocumented',
     'gap.state.lifecycle-undocumented.why': "Without a documented lifecycle, agents don't know when to create, update or retire each state file, so the whole state layer drifts and stops being trustworthy.",
     'gap.state.lifecycle-undocumented.fix': "Document each state file's lifecycle — who updates it, at what point, and when it gets archived or reset.",
@@ -346,11 +356,14 @@ export const MESSAGES = {
     'gap.state.feature-list-invalid.why': '功能清单不符合自己的 schema 时，任何读取它的工具都会出错，agent 也没法再信任清单里声明的工作范围。',
     'gap.state.feature-list-invalid.fix': '用 feature_list.schema.json 校验 feature_list.json，修正条目直到校验通过。',
     'gap.state.no-handoff.title': '缺少会话交接文档',
-    'gap.state.no-handoff.why': '没有交接机制时，只存在于某一次会话脑子里的上下文，会在那次会话结束的瞬间彻底消失。',
-    'gap.state.no-handoff.fix': '加一份 session-handoff.md 模板和 clean-state-checklist.md，让 agent 在结束会话前填写。',
+    'gap.state.no-handoff.why': '缺失的交接产物：{artefacts}。没有交接机制时，只存在于某一次会话脑子里的上下文，会在那次会话结束的瞬间彻底消失。',
+    'gap.state.no-handoff.fix': '把 {artefacts} 补上，并在结束会话前写清楚这次实际发生了什么。',
     'gap.state.handoff-unfilled.title': '交接文档存在，但还是没填写的模板',
-    'gap.state.handoff-unfilled.why': 'session-handoff.md 或 clean-state-checklist.md 文件确实存在，但每一份都还带着未替换的 FILL: 占位符，或者跟本项目出厂模板逐字节相同——文件是在的，只是没人真正记录发生了什么。',
-    'gap.state.handoff-unfilled.fix': '打开已经存在的 session-handoff.md / clean-state-checklist.md，把里面每一处 FILL: 占位符换成这次会话实际发生的内容——不要再重新 scaffold，文件本来就在那里。',
+    // 与 en 同理：这里刻意不断言单一原因，因为触发它的实际状态有三种
+    // （未替换的 FILL: 标记、剥掉 scaffold 自己那行溯源注释之后与出厂模板
+    // 逐字节相同、以及这个工具根本读不到该文件）。
+    'gap.state.handoff-unfilled.why': '存在但没有填写的交接产物：{artefacts}。找到的每一份要么还带着未替换的 FILL: 标记，要么就是本项目的出厂模板、只多了 scaffold 自己加的那行溯源注释，要么这个工具根本读不到它——总之磁盘上没有任何东西记录了实际发生的事。',
+    'gap.state.handoff-unfilled.fix': '把 {artefacts} 里每一处 FILL: 占位符和残留的模板文字，换成这次会话实际发生的内容。不要再重新 scaffold——scaffold 从不覆盖已有文件，只会在旁边多写一个 .harness-proposed。如果是这个工具读不到文件，先修好它的权限。',
     'gap.state.lifecycle-undocumented.title': '状态文件生命周期未说明',
     'gap.state.lifecycle-undocumented.why': '没有文档说明生命周期时，agent 不知道每份状态文件该在什么时候创建、更新或废弃，整个状态层就会逐渐失真、失去可信度。',
     'gap.state.lifecycle-undocumented.fix': '写清楚每份状态文件的生命周期——谁在什么节点更新它，什么时候归档或重置。',

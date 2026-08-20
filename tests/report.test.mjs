@@ -14,7 +14,13 @@ const results = {
   instructions: { score: 4, cappedByEvidence: false, evidence: [{ kind: 'file', path: 'AGENTS.md', note: '80 lines' }], gapIds: [] },
   tools: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['tools.no-least-privilege-doc'] },
   environment: { score: 3, cappedByEvidence: true, evidence: [], gapIds: ['environment.no-container'] },
-  state: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['state.no-handoff'] },
+  // gapVars mirrors what state.mjs really returns: the handoff gaps name
+  // the specific artefact that caused them, so buildReport has to be handed
+  // the substitution values along with the gap id.
+  state: {
+    score: 3, cappedByEvidence: false, evidence: [], gapIds: ['state.no-handoff'],
+    gapVars: { 'state.no-handoff': { artefacts: 'session-handoff.md' } },
+  },
   feedback: { score: 2, cappedByEvidence: true, evidence: [], gapIds: ['feedback.commands-unverified'] },
   loop: { score: 2, cappedByEvidence: false, evidence: [], gapIds: ['loop.no-budget-cap'] },
 };
@@ -140,12 +146,29 @@ test('buildReport output differs by lang, but is stable within a lang', () => {
   assert.equal(JSON.stringify(build({ lang: 'zh' })), JSON.stringify(zh), 'same lang must stay byte-identical');
 });
 
-/** A results object with every subsystem at 0 and no gaps except state's. */
+/**
+ * A results object with every subsystem at 0 and no gaps except state's.
+ *
+ * The two handoff gap messages interpolate `{artefacts}`, so any caller that
+ * asks for one of them must supply the vars a real scorer would — buildReport
+ * refuses to materialize a message with an unsubstituted placeholder. Filled
+ * in here for the whole file rather than at each call site: which artefact is
+ * named is irrelevant to every suppression test below, but the vars have to
+ * exist for the report to build at all.
+ */
+const HANDOFF_GAP_VARS = {
+  'state.no-handoff': { artefacts: 'session-handoff.md' },
+  'state.handoff-unfilled': { artefacts: 'clean-state-checklist.md' },
+};
+
 function resultsWithStateGaps(gapIds) {
   const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  const gapVars = Object.fromEntries(
+    gapIds.filter((id) => id in HANDOFF_GAP_VARS).map((id) => [id, HANDOFF_GAP_VARS[id]]),
+  );
   return {
     instructions: empty, tools: empty, environment: empty,
-    state: { score: 0, cappedByEvidence: false, evidence: [], gapIds },
+    state: { score: 0, cappedByEvidence: false, evidence: [], gapIds, gapVars },
     feedback: empty, loop: empty,
   };
 }

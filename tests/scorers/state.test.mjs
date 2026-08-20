@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { score, validateFeatureList } from '../../scripts/lib/scorers/state.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { globToRegExp } from '../../scripts/lib/scan.mjs';
+import { buildReport, renderMarkdown } from '../../scripts/lib/report.mjs';
 
 const NOW = new Date('2026-08-10T00:00:00Z');
 const FRESH = new Date('2026-08-05T00:00:00Z'); // 5 days before NOW
@@ -401,4 +402,52 @@ test('one absent artefact plus one unfilled artefact reports both gap ids', () =
   assert.equal(r.score, 3);
   assert.ok(r.gapIds.includes('state.no-handoff'));
   assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  // Each gap must be attributed to the artefact that actually caused it,
+  // not to both artefacts unconditionally (see below for why).
+  assert.deepEqual(r.gapVars['state.no-handoff'], { artefacts: 'session-handoff.md' });
+  assert.deepEqual(r.gapVars['state.handoff-unfilled'], { artefacts: 'clean-state-checklist.md' });
+});
+
+// The mixed case, asserted on the RENDERED PROSE rather than on gap ids.
+// Every id-level assertion above passed while the report simultaneously
+// told the user to "open the existing session-handoff.md ... the file is
+// already there" (for a file the same report said was missing) and to "add
+// a ... clean-state-checklist.md" (for a file that existed). Two true gap
+// ids, one self-contradicting document. Only a test that reads the finished
+// text can catch that class of defect.
+test('the mixed absent/unfilled report never names an artefact in the wrong state', () => {
+  for (const lang of ['en', 'zh']) {
+    const r = score(input({
+      files: rungThreeFiles({
+        // session-handoff.md intentionally absent.
+        'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+      }),
+      gitLastCommits: { 'PROGRESS.md': FRESH },
+    }));
+    const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+    const report = buildReport({
+      repo: '/fake',
+      stack: [],
+      results: {
+        instructions: empty, tools: empty, environment: empty, state: r, feedback: empty, loop: empty,
+      },
+      hasEvidence: false,
+      evidenceReason: 'missing',
+      verifiedAt: null,
+      toolVersion: '0.1.0',
+      now: NOW,
+      lang,
+    });
+    const md = renderMarkdown(report, lang);
+    const gaps = report.subsystems.find((s) => s.id === 'state').gaps;
+    const byId = Object.fromEntries(gaps.map((g) => [g.id, `${g.why} ${g.fix}`]));
+
+    // The absent artefact is named only by the "missing" gap, and the
+    // unfilled one only by the "exists but unfilled" gap.
+    assert.ok(byId['state.no-handoff'].includes('session-handoff.md'), `${lang}: no-handoff must name the absent artefact`);
+    assert.ok(!byId['state.no-handoff'].includes('clean-state-checklist.md'), `${lang}: no-handoff must not name the artefact that exists`);
+    assert.ok(byId['state.handoff-unfilled'].includes('clean-state-checklist.md'), `${lang}: handoff-unfilled must name the unfilled artefact`);
+    assert.ok(!byId['state.handoff-unfilled'].includes('session-handoff.md'), `${lang}: handoff-unfilled must not name the artefact that is missing`);
+    assert.ok(!/\{\w+\}/.test(md), `${lang}: an interpolation placeholder survived into the rendered report`);
+  }
 });

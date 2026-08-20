@@ -273,10 +273,22 @@ test('C (dogfood): a full bilingual scaffold produces zero declared verify comma
     const report = runAssess({ repoPath: dir, lang, now });
     const allGaps = report.subsystems.flatMap((s) => s.gaps.map((g) => g.id));
 
-    // Condition 2 (brief C): no gap may be caused by OUR OWN placeholder
-    // content -- a broken link from FILL text, an invalid feature_list.json,
-    // a dangling `make` reference in AGENTS.md, or (the B1/B2 signature bug
-    // itself) a declared command read as having failed.
+    // Condition 2 (brief C): no gap may be caused by our own placeholder
+    // content being BROKEN or MISREAD -- a broken link from FILL text, an
+    // invalid feature_list.json, a dangling `make` reference in AGENTS.md,
+    // or (the B1/B2 signature bug itself) a declared command read as having
+    // failed.
+    //
+    // The condition is deliberately narrower than "no gap may come from our
+    // own placeholders at all", which is what it used to say and what this
+    // list has never actually asserted. state.handoff-unfilled is exactly
+    // such a gap and it is CORRECT: scaffold wrote a placeholder, nobody has
+    // filled it in yet, and saying so is the whole point of the placeholder
+    // rule. It belongs in mustAppear below, the same way
+    // tests/scaffold.e2e.test.mjs's sibling dogfood test files it -- the two
+    // tests are the same shape and must not disagree about whether this gap
+    // is expected. What must never appear is the "file is missing" gap,
+    // state.no-handoff, which is in the list below.
     const mustNotAppear = [
       'instructions.missing', 'instructions.no-setup-commands', 'instructions.no-constraints',
       'instructions.no-verification', 'instructions.too-long', 'instructions.stale-links',
@@ -294,7 +306,13 @@ test('C (dogfood): a full bilingual scaffold produces zero declared verify comma
     // legitimately still has real, honest gaps (no verify commands filled
     // in, no tests, no pinned stack). If these ever disappeared, this test
     // would have stopped actually exercising the real scorers.
-    const mustAppear = ['feedback.no-declared-commands', 'feedback.no-tests', 'instructions.no-stack-versions'];
+    const mustAppear = [
+      'feedback.no-declared-commands', 'feedback.no-tests', 'instructions.no-stack-versions',
+      // Asserted, not merely tolerated: a scaffold that stopped reporting
+      // its own unfilled handoff placeholders would mean the placeholder
+      // rule had silently stopped working.
+      'state.handoff-unfilled',
+    ];
     for (const id of mustAppear) {
       assert.ok(allGaps.includes(id), `${lang}: expected honest gap "${id}" to still be present for a code-free scaffold`);
     }

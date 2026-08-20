@@ -6,6 +6,27 @@ import { t } from './i18n.mjs';
 export const SCHEMA_VERSION = 1;
 
 /**
+ * Translate one gap message and prove nothing was left unsubstituted.
+ *
+ * A gap's `why`/`fix` may name the specific artefact that caused it (see
+ * state.mjs's `gapVars`). `t()` deliberately leaves an unknown `{name}`
+ * alone rather than throwing, which is right for its own contract but wrong
+ * here: a scorer that emits a gap and forgets its vars would ship the
+ * literal text "{artefacts}" to the user, silently. Materialization is the
+ * one place that can see the finished string, so it is the place to refuse.
+ * Same reasoning as `t()` throwing on a missing key rather than rendering
+ * the key itself.
+ */
+function materialize(key, lang, vars) {
+  const text = t(key, lang, vars);
+  const leftover = text.match(/\{(\w+)\}/);
+  if (leftover) {
+    throw new Error(`Unsubstituted placeholder {${leftover[1]}} in ${key} — the scorer must supply it via gapVars`);
+  }
+  return text;
+}
+
+/**
  * Assemble the machine-readable report (spec 6.3's `harness-report.json`).
  * Pure: every input, including `lang`, is injected by the caller — no
  * Date.now()/Math.random(), no reading of ambient state.
@@ -42,12 +63,13 @@ export function buildReport({
     });
     const gaps = sortGaps(visibleGapIds.map((gapId) => {
       const def = gapById(gapId);
+      const vars = r.gapVars?.[gapId] ?? {};
       return {
         id: def.id,
         severity: def.severity,
-        title: t(def.titleKey, lang),
-        why: t(def.whyKey, lang),
-        fix: t(def.fixKey, lang),
+        title: materialize(def.titleKey, lang, vars),
+        why: materialize(def.whyKey, lang, vars),
+        fix: materialize(def.fixKey, lang, vars),
         scaffoldable: def.scaffoldable,
         roi: computeRoi(def, r.score),
       };

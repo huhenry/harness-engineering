@@ -76,7 +76,7 @@ Gap id：`environment.no-lockfile`、`environment.no-runtime-pin`、`environment
 | 1 | 进度文件存在。 |
 | 2 | 它在最近 30 天内被改动过（优先看 git 历史，没有 git 历史再退回文件的修改时间），**并且**同时有"已完成""进行中""阻塞中"三类标题。 |
 | 3 | `feature_list.json` 存在**并且**通过校验（每个 feature 的 `id` 非空且唯一，`title` 非空，`status` 属于 `todo`/`in-progress`/`done`/`blocked` 之一）。 |
-| 4 | `session-handoff.md` 和 `clean-state-checklist.md`（不限层级）都以**已填写**的文件形式存在，**并且**`AGENTS.md` 写明了会话开始/结束的生命周期。产物缺失报 `state.no-handoff`；文件存在但仍带着未填写的 `FILL:` 标记、或者跟本项目出厂模板逐字节相同的，改报 `state.handoff-unfilled`——把模板 vendor 或 scaffold 进来不等于写了这份文档。这两个 gap id 各自独立判断："文件不存在"和"文件在但没写"是两件不同的事，一个仓库可能两个产物各踩中一条、同时触发。 |
+| 4 | `session-handoff.md` 和 `clean-state-checklist.md`（不限层级）都以**已填写**的文件形式存在，**并且**`AGENTS.md` 写明了会话开始/结束的生命周期。产物缺失报 `state.no-handoff`；文件存在、但这个工具无法把它读成"已填写"的，改报 `state.handoff-unfilled`——把模板 vendor 或 scaffold 进来不等于写了这份文档。"没填写"涵盖三种状态：还带着未替换的 `FILL:` 标记；剥掉开头那行 `scaffold` 溯源注释之后与本项目出厂模板逐字节相同（所以刚 scaffold 出来的文件也算，尽管它从来不是字面意义上的逐字节相同）；以及文件根本读不出来。这两个 gap id 各自独立判断："文件不存在"和"文件在但没写"是两件不同的事，一个仓库可能两个产物各踩中一条、同时触发——每条 gap 的文案只会点名真正触发它的那个产物。 |
 
 Gap id：`state.no-progress`、`state.progress-stale`、`state.progress-incomplete`、
 `state.no-feature-list`、`state.feature-list-invalid`、`state.no-handoff`、
