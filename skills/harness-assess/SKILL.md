@@ -22,10 +22,10 @@ Score a repository's six harness subsystems and report exactly what is missing, 
 
 ## Workflow
 
-1. Locate the scripts, same three-way check as every harness-* skill that wraps a script:
-   - `${CLAUDE_PLUGIN_ROOT}` was substituted with a real path → `${CLAUDE_PLUGIN_ROOT}/scripts/`. Normal case for an installed Claude Code plugin.
-   - Working inside a harness-engineering repo checkout → `scripts/assess.mjs`, relative to the repo root.
-   - Neither → this skill was installed by copying only `skills/` into another ecosystem (no `scripts/` present). Ask the user for a harness-engineering checkout path, or point them at https://github.com/huhenry/harness-engineering. Do not guess a path.
+1. Locate the scripts, same three-way check as every harness-* skill that wraps a script. Read step 2's command and see which case it is:
+   - It already names a real absolute path (not a braced `CLAUDE_PLUGIN_ROOT` placeholder) → run it as written. Both an installed Claude Code plugin and an `install.sh` install produce this; `install.sh` writes the source checkout's absolute path in at install time. If that path does not exist, the checkout has moved or been deleted — treat it as the third case.
+   - It still shows the placeholder, and you are working inside a harness-engineering repo checkout → `scripts/assess.mjs`, relative to the repo root.
+   - Neither → the skill text was copied by hand, or an `install.sh` install's checkout is gone; no install ever copies `scripts/` next to the skill text. Ask the user for a harness-engineering checkout path, or point them at https://github.com/huhenry/harness-engineering. Do not guess a path.
 2. Run: `node "${CLAUDE_PLUGIN_ROOT}/scripts/assess.mjs" <repo>`
    - `--json` for machine-readable output.
    - `--min-level <0-5>` to gate on a specific level: exits 0 if reached, 1 if not, 2 if the flag value itself isn't a valid integer 0-5.

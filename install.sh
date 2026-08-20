@@ -54,6 +54,22 @@ for t in $TARGETS; do
   # `sed > tmp && mv` rather than `sed -i`: -i needs a suffix argument on BSD
   # sed and rejects one attached differently on some GNU builds, and this
   # script is tested under dash for POSIX compliance.
+  #
+  # The `g` flag rewrites EVERY occurrence, which is only safe because the
+  # shipped skills write the placeholder in exactly one position -- directly
+  # before `/scripts/`, as part of a command a reader is meant to run. Prose
+  # that talks ABOUT the placeholder names it as "the braced
+  # CLAUDE_PLUGIN_ROOT placeholder" and never writes the ${...} form, so
+  # there is nothing explanatory for this substitution to mangle. An earlier
+  # version of the skills did embed it in their own explanation, and a real
+  # install produced the sentence "it only works in the braced
+  # /Users/.../harness-engineering form". tests/skills.test.mjs pins the
+  # position rule so that cannot come back.
+  #
+  # The loop below is space-safe: POSIX field splitting happens BEFORE
+  # pathname expansion, and glob results are never re-split, so
+  # "$SRC"/skills/*/ yields exactly one word per match even when $SRC
+  # contains spaces.
   for skill_dir in "$SRC"/skills/*/; do
     skill=${skill_dir%/}
     skill=${skill##*/}

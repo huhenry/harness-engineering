@@ -263,6 +263,61 @@ test('install.sh substitutes the checkout path into installed skill text', () =>
   }
 });
 
+// The substitution is a blanket `sed ... g`, so it rewrites the skill's own
+// explanation of the placeholder just as readily as it rewrites a command.
+// A shipped version of these skills said "it only works in the braced
+// ${CLAUDE_PLUGIN_ROOT} form", and a real install turned that into "it only
+// works in the braced /Users/.../harness-engineering form" -- a sentence
+// that is simply false, in the file whose whole job is telling an agent how
+// to find the scripts. The existing tests only checked that the placeholder
+// was gone, which that damaged text passes.
+//
+// The rule that makes the blanket substitution safe is positional: the
+// placeholder may appear only immediately before `/scripts/`. This asserts
+// it on the INSTALLED output, where the damage would actually show up
+// (tests/skills.test.mjs asserts the same rule on the source).
+test('installing never rewrites prose -- the substituted path lands only in script paths', () => {
+  const dst = tempDir('harness-install-prose-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(ROOT, from);
+      if (at === -1) break;
+      assert.equal(
+        text.slice(at + ROOT.length, at + ROOT.length + 9), '/scripts/',
+        `${skill}/SKILL.md: the substituted checkout path at offset ${at} is not part of a scripts/ path -- `
+        + `sed rewrote prose. Context: ${JSON.stringify(text.slice(Math.max(0, at - 60), at + ROOT.length + 40))}`,
+      );
+      from = at + ROOT.length;
+    }
+  }
+});
+
+// Task 4 made an install.sh install resolve its own commands. The installed
+// skill's decision procedure has to say so: the version shipped before this
+// test still told the agent that an install.sh install has "no scripts
+// present at all. Ask the user for the path" -- a live instruction to do
+// the exact thing the substitution abolished.
+test('the installed skill does not tell the agent to ask for a path it already has', () => {
+  const dst = tempDir('harness-install-branch-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of ['harness-assess', 'harness-scaffold', 'harness-verify']) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    const askBullet = text.split('\n').find((l) => l.includes('Ask the user'));
+    assert.ok(askBullet, `${skill}/SKILL.md must still document the ask-the-user fallback`);
+    assert.ok(
+      !/install\.sh` into|installed by copying only/.test(askBullet),
+      `${skill}/SKILL.md still files an install.sh install under "ask the user for a path": ${askBullet}`,
+    );
+    assert.match(
+      text, /`install\.sh`[^\n]*install time/,
+      `${skill}/SKILL.md must say that an install.sh install writes the path in at install time`,
+    );
+  }
+});
+
 test('the substituted command actually runs', () => {
   const dst = tempDir('harness-install-runs-');
   execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
