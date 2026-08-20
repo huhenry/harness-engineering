@@ -139,3 +139,58 @@ test('buildReport output differs by lang, but is stable within a lang', () => {
   assert.notEqual(JSON.stringify(en), JSON.stringify(zh), 'lang must affect materialized text');
   assert.equal(JSON.stringify(build({ lang: 'zh' })), JSON.stringify(zh), 'same lang must stay byte-identical');
 });
+
+/** A results object with every subsystem at 0 and no gaps except state's. */
+function resultsWithStateGaps(gapIds) {
+  const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  return {
+    instructions: empty, tools: empty, environment: empty,
+    state: { score: 0, cappedByEvidence: false, evidence: [], gapIds },
+    feedback: empty, loop: empty,
+  };
+}
+
+const REPORT_ARGS = {
+  repo: '/fake', stack: [], hasEvidence: false, evidenceReason: 'missing',
+  verifiedAt: null, toolVersion: '0.1.0', now: new Date('2026-08-20T00:00:00Z'), lang: 'en',
+};
+
+// ROADMAP#1: "No progress file" and "Progress file is stale" used to appear
+// in the same report — the second presupposes a file the first just said
+// does not exist.
+test('gaps that presuppose a missing file are suppressed when it is missing', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale', 'state.progress-incomplete']),
+  });
+  const ids = report.subsystems.find((s) => s.id === 'state').gaps.map((g) => g.id);
+  assert.deepEqual(ids, ['state.no-progress']);
+});
+
+test('a presupposing gap survives when its precondition gap is absent', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.progress-stale']),
+  });
+  const ids = report.subsystems.find((s) => s.id === 'state').gaps.map((g) => g.id);
+  assert.deepEqual(ids, ['state.progress-stale']);
+});
+
+test('suppression does not change the score', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale']),
+  });
+  assert.equal(report.subsystems.find((s) => s.id === 'state').score, 0);
+  assert.equal(report.score.total, 0);
+});
+
+test('the rendered markdown no longer shows both progress gaps at once', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale']),
+  });
+  const md = renderMarkdown(report, 'en');
+  assert.ok(md.includes('No progress file'));
+  assert.ok(!/Progress file is stale/.test(md));
+});

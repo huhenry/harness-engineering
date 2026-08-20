@@ -10,39 +10,6 @@ first noticed. The larger directions at the end come from the project's original
 
 ## v1.1 candidates
 
-### 1. Suppress gaps that presuppose a file's existence at render time
-
-**What's wrong:** When a repository has no progress file at all, the assessment report currently
-shows both "No progress file" (`state.no-progress`) and "Progress file is stale"
-(`state.progress-stale`) in the same output — the second gap presupposes a file that the first gap
-just said doesn't exist. Confirmed directly against `fixtures/bad-repo`:
-
-```
-$ node scripts/assess.mjs fixtures/bad-repo
-...
-### State · No progress file (ROI 10)
-...
-### State · Progress file is stale (ROI 10)
-...
-```
-
-**Root cause:** `scripts/lib/scorers/ladder.mjs` collects every failing check at every rung as it
-walks bottom-up, without stopping once a lower rung's own condition (file existence) has already
-failed. `scripts/lib/scorers/state.mjs`'s rung 2 checks `fresh` and `hasAllThreeSections`
-unconditionally, even when `hasProgressFile` (rung 1) is false — so a missing file scores 0 as
-expected, but still accumulates the rung-2 gap ids into the report.
-
-**Why not fixed in v1:** Flagged by a reviewer during Task 14 and explicitly ruled out of scope by
-the controller at the time — it is a scope change (touching render/grouping logic, not a pure bug),
-and this project's standing rule requires confirmation before scope changes. Recorded then as a
-ROADMAP v1.1 item to be written here.
-
-**Candidate fix directions** (not decided — needs its own design pass): either (a) at render time,
-suppress a subsystem's rung-2+ gaps when its rung-1 file-existence gap is already present, or
-(b) change the gap text itself so `state.progress-stale`'s wording no longer implies a file exists
-("stale or missing" instead of "is stale"). (a) is closer to the existing recommendation from the
-Task 14 review discussion.
-
 ### 2. A shared `MAX_SCORE` constant
 
 **What's wrong:** The top rung of every subsystem's score (`4`) is a duplicated literal, not a

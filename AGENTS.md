@@ -91,5 +91,4 @@ session.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) -- the TDD workflow, safety-change review bar, and
   documentation-honesty rule this project holds contributions to.
 - [`ROADMAP.md`](ROADMAP.md) -- known, deliberately-deferred gaps in this tool itself (not this
-  repository's own score), including the `state.no-progress`/`progress-stale` co-occurrence this
-  self-assessment's own report shows before `PROGRESS.md` exists.
+  repository's own score).

@@ -1,12 +1,22 @@
 export const SUBSYSTEMS = ['instructions', 'tools', 'environment', 'state', 'feedback', 'loop'];
 
-const def = (id, severity, effort, templates = []) => ({
+/**
+ * `presupposedBy` names another gap in the SAME subsystem whose presence
+ * makes this one meaningless — "Progress file is stale" presupposes a
+ * progress file, which "No progress file" just said does not exist
+ * (ROADMAP#1). Declared here rather than hardcoded in report.mjs so a future
+ * pair is one line in this table, not a new branch in the renderer. It is a
+ * RENDER-time relationship only: ladder.mjs still collects every failing
+ * check, and scores are unaffected.
+ */
+const def = (id, severity, effort, templates = [], presupposedBy = null) => ({
   id,
   subsystem: id.split('.')[0],
   severity,
   effort,
   scaffoldable: templates.length > 0,
   templates,
+  presupposedBy,
   titleKey: `gap.${id}.title`,
   whyKey: `gap.${id}.why`,
   fixKey: `gap.${id}.fix`,
@@ -35,8 +45,8 @@ export const GAPS = [
   def('environment.no-container', 'low', 3, ['.devcontainer/devcontainer.json']),
   // state
   def('state.no-progress', 'high', 1, ['PROGRESS.md']),
-  def('state.progress-stale', 'high', 2),
-  def('state.progress-incomplete', 'medium', 2),
+  def('state.progress-stale', 'high', 2, [], 'state.no-progress'),
+  def('state.progress-incomplete', 'medium', 2, [], 'state.no-progress'),
   def('state.no-feature-list', 'medium', 1, ['feature_list.json', 'feature_list.schema.json']),
   def('state.feature-list-invalid', 'high', 2),
   def('state.no-handoff', 'low', 1, ['session-handoff.md', 'clean-state-checklist.md']),
@@ -46,6 +56,19 @@ export const GAPS = [
   // next to a handoff doc that is still unfilled. The actual fix is for a
   // human to replace the FILL: placeholders with what really happened, not
   // to scaffold again.
+  //
+  // No `presupposedBy: 'state.no-handoff'` either, even though the two can
+  // fire together (state.mjs's own comment above `anyHandoffAbsent`/
+  // `anyHandoffUnfilled` calls this out): each of the two handoff artefacts
+  // (session-handoff.md, clean-state-checklist.md) is classified absent/
+  // unfilled/filled independently, and never both absent and unfilled at
+  // once for the SAME artefact (classifyHandoffArtefact returns exactly one
+  // state). So the only way both gap ids appear together is one artefact
+  // missing and the OTHER present-but-unfilled -- two true, distinct
+  // problems about two different files, not one gap presupposing what the
+  // other just denied. Suppressing either here would hide a real file's
+  // real problem, unlike the progress-file pair above where both gaps can
+  // only ever be about the single same PROGRESS.md.
   def('state.handoff-unfilled', 'low', 1),
   def('state.lifecycle-undocumented', 'medium', 2),
   // feedback

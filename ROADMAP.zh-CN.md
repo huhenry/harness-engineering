@@ -8,36 +8,6 @@ v1.1 候选的每一条，在写进这份文档之前都重新对照过当前代
 
 ## v1.1 候选
 
-### 1. 在渲染阶段抑制那些"预设了某个文件存在"的 gap
-
-**问题在哪：** 一个仓库完全没有进度文件的时候，当前的评估报告会同时显示"缺少进度记录文件"
-（`state.no-progress`）和"进度文件已过期"（`state.progress-stale`）——后一条 gap 的前提是这个
-文件存在，但前一条 gap 刚刚说了它不存在。直接拿 `fixtures/bad-repo` 实测确认：
-
-```
-$ node scripts/assess.mjs fixtures/bad-repo
-...
-### State · No progress file (ROI 10)
-...
-### State · Progress file is stale (ROI 10)
-...
-```
-
-**根因：** `scripts/lib/scorers/ladder.mjs` 从下往上走每一档时，会把每一档里所有没通过的检查项
-都收进 gap 列表，并不会因为更低一档的条件（文件是否存在）已经没通过就停止收集。
-`scripts/lib/scorers/state.mjs` 的第 2 档无条件检查 `fresh` 和 `hasAllThreeSections`，哪怕第 1 档
-的 `hasProgressFile` 已经是 false——所以没有进度文件的仓库确实按预期打了 0 分，但报告里还是把
-第 2 档的 gap id 一起带出来了。
-
-**为什么 v1 没修：** Task 14 评审时就有人指出过，当时的协调者明确判定不在 v1 范围内——这属于
-范围变更（要动渲染/分组逻辑，不是纯粹的 bug），而这个项目的常设规则是范围变更必须先确认。当时
-就记录为"要写进 Task 23 的 ROADMAP v1.1"。
-
-**候选修法方向**（还没定案，需要单独走一遍设计）：要么 (a) 在渲染阶段，如果某个子系统"文件不
-存在"这个第 1 档 gap 已经出现了，就抑制掉它第 2 档及以上的 gap；要么 (b) 直接改 gap 文案本身，
-让 `state.progress-stale` 的措辞不再暗示文件一定存在（比如改成"过期或缺失"而不是"已过期"）。
-(a) 更接近 Task 14 评审讨论时给出的建议方向。
-
 ### 2. 抽一个共享的 `MAX_SCORE` 常量
 
 **问题在哪：** 每个子系统的满分档位（`4`）不是单一来源，而是到处重复写的字面量。直接读代码
