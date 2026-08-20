@@ -30,7 +30,38 @@ function allShippedTemplateTexts() {
   if (shippedTexts === null) {
     shippedTexts = new Set();
     for (const name of TEMPLATE_WHITELIST) {
-      for (const lang of SUPPORTED_LANGS) shippedTexts.add(readTemplate(name, lang));
+      for (const lang of SUPPORTED_LANGS) {
+        // Guard, not decoration -- do not "clean this up" into a bare
+        // shippedTexts.add(readTemplate(name, lang)). `assess` is
+        // documented and tested (tests/packaging.test.mjs's "fully detached
+        // plugin install" case) to run from installs that ship scripts/
+        // without templates/ sitting next to it -- e.g. a script-only
+        // Claude Code plugin cache copy. Before this module existed,
+        // nothing on assess's read-only path ever imported templates.mjs,
+        // so that install shape worked fine. readTemplate does a bare
+        // readFileSync with no existence check, so an absent or unreadable
+        // templates/ throws ENOENT here, and an uncaught exception here
+        // used to crash the entire assess run over a directory that simply
+        // isn't there.
+        //
+        // A missing template can only ever SHRINK the comparison set Rule B
+        // checks against, never grow it -- so treating "can't read this
+        // template" as "this template isn't shipped" degrades Rule B
+        // gracefully (fewer things get recognized as vendored) rather than
+        // crashing. Rule A (the FILL: marker check) never touches
+        // templates/ at all, so it is completely unaffected either way. For
+        // any repository actually checked out alongside a real templates/
+        // directory -- every fixture, this repository's own self-assessment,
+        // and the normal `git clone` + `node scripts/assess.mjs` path — every
+        // read here still succeeds, so the comparison set is exactly as
+        // complete as before and the answer for those repositories does not
+        // change.
+        try {
+          shippedTexts.add(readTemplate(name, lang));
+        } catch {
+          // Unreadable/missing template: contributes nothing to Rule B.
+        }
+      }
     }
   }
   return shippedTexts;
