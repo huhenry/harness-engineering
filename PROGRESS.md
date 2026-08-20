@@ -15,16 +15,29 @@ should be able to trust it instead of re-deriving state from the diff.
   evidence-writing entrypoint.
 - Tasks 19-23: bilingual templates (16 files x 2 languages), `scaffold.mjs`, the five
   `harness-*` skills, the Claude Code plugin manifest + `install.sh`, bilingual README/ROADMAP.
-- Task 24 (this one, dogfooding): ran this tool on this repository, went from L0 (3/24) to an
+- Task 24 (dogfooding): ran this tool on this repository, went from L0 (3/24) to an
   evidence-backed L5 (23/24), and wrote the CI workflow, self-assessment gate and
   `harness-badge.json` that keep it there. The remaining point is Feedback, which is at 3/4 for
-  two honest reasons: this project has no end-to-end suite and no runtime to observe. See
-  `session-handoff.md` for the exact state this session left behind.
+  two honest reasons: this project has no end-to-end suite and no runtime to observe.
+- v1.1 (hardening): closed all four `ROADMAP.md` v1.1 candidates. The placeholder rule
+  (`scripts/lib/placeholder.mjs`) stops an unfilled template or a byte-identical vendored copy from
+  satisfying the State handoff rung, and along the way added a new gap id,
+  `state.handoff-unfilled`, distinguishing "the file is missing" from "the file exists but was
+  never filled in" (a scope expansion beyond the original plan, authorized mid-flight). Report
+  rendering now suppresses a gap that presupposes a file another gap already says is missing (e.g.
+  "progress file is stale" no longer appears alongside "no progress file"). The top-rung score of 4
+  is now a single `MAX_SCORE` constant in `rubric.mjs` instead of seven hand-written literals.
+  `install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files so their
+  commands resolve without asking the user for a path, scoped to skills actually copied from the
+  source checkout so a pre-existing third-party skill is never rewritten. Baseline fixture scores
+  (`bad-repo`/`mid-repo`/`good-repo`) and this repository's own self-assessment (23/24, L5) are
+  unchanged — this was hardening, not a scoring behavior change. Full suite at 506/506.
 
 ## In Progress
 
-- Nothing currently. All 24 planned tasks are complete; from here the project moves to whatever
-  `ROADMAP.md`'s v1.1 candidates or "beyond v1.1" directions get picked up next.
+- v1.2: `harness diff` (score movement between two assessments of the same repository) and a
+  GitHub Action that comments the harness score delta on a pull request, turning the assessment
+  into a review-time signal. Both are listed under "Beyond v1.1" in `ROADMAP.md`.
 
 ## Blocked
 

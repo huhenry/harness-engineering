@@ -4,11 +4,10 @@ This is not a wishlist. Every item below is a real thing found and deliberately 
 this project's own development — not scope invented after the fact to pad this document. Each
 entry says what was found, how it was verified, and why it was not fixed in v1.
 
-The v1.1 candidates were each re-verified against the current code before being listed, so the
-file and line references below are accurate as of this release rather than as of when the item was
-first noticed. The larger directions at the end come from the project's original design document.
-
-## v1.1 candidates
+v1.1 shipped all four candidates that used to be tracked in this section: the placeholder rule,
+render-time gap suppression, the shared `MAX_SCORE` constant, and `install.sh` path substitution.
+Each was re-verified against the current code before being closed out. The larger directions below
+come from the project's original design document.
 
 ## Beyond v1.1 — larger directions
 

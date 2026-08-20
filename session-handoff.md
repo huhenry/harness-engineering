@@ -6,28 +6,52 @@ that only ever lived in one session's head can survive into the next one.
 
 ## Previous session
 
-Task 24 (dogfooding, the final task of this project): ran `scripts/assess.mjs` against this
-repository itself and measured L0, 3/24 (`instructions >= 2` unmet, no lockfile/runtime pin, no
-progress file, no declared verification commands). Used `scripts/scaffold.mjs . --lang en --apply`
-to generate the missing harness files, filled every unfilled placeholder comment with real content
-about this repository, wrote `.nvmrc`, `package-lock.json` (via `npm install --package-lock-only`),
-a real `init.sh` bootstrap script, `.devcontainer/devcontainer.json`, `harness-badge.json`, and
-`.github/workflows/ci.yml` (test matrix on Node 20/22 + a `self-assess` job that runs
-`verify --run` then `assess --min-level 4` then refreshes the badge on `main`). Ran
-`node scripts/verify.mjs . --run` for real against the declared `bootstrap`/`test`/`lint` commands
-and `node scripts/assess.mjs . --min-level 4` against the resulting evidence. Also ran the
-end-to-end drill on a real, unrelated multi-language repository (assess + scaffold dry-run against
-a copy, then diffed against the original to prove both tools left it untouched).
+v1.1 hardening is complete and merged: all four `ROADMAP.md` v1.1 candidates are closed
+(commits `f15c6c5..7453d9f` on `v1.1-hardening`). In execution order: Task 1 added
+`scripts/lib/placeholder.mjs` and wired it into the State scorer so an unfilled template, or a
+file byte-identical to a shipped template, no longer satisfies the handoff rung -- this surfaced a
+genuine plan defect (`scaffold` prepends a provenance stamp that defeated the byte-identity check;
+fixed by normalising the stamp before comparing) and one human-authorized scope expansion: a new
+gap id, `state.handoff-unfilled`, so a scaffolded-but-not-yet-filled-in handoff reports "exists but
+unfilled" rather than the misleading "no handoff doc". Task 2 made report rendering suppress a gap
+that presupposes a file another gap already says is missing (`state.progress-stale` no longer
+appears next to `state.no-progress`) -- purely a rendering change, no score moved. Task 4 made
+`install.sh` substitute the checkout's absolute path into installed `SKILL.md` files, scoped to
+skills actually copied from the source checkout after a reviewer caught the first draft rewriting
+a pre-existing third-party skill's placeholder too. Task 3 (done last, on purpose, since it touches
+every scorer) collapsed seven hand-written top-rung `4` literals into one `MAX_SCORE` constant in
+`rubric.mjs` -- pure refactor, nothing moved. Every task carried its own TDD cycle, code review, and
+at least one fix round; full details are in
+`.superpowers/sdd/2026-08-20-v1.1-hardening-plan/progress.md` and the sibling `task-N-report.md`
+files. Baseline fixture scores are unchanged (`bad-repo` 0/24 L0, `mid-repo` 11/24 L2, `good-repo`
+16/24 L3) and this repository's own self-assessment is still 23/24 L5. Full suite: 506/506.
 
 ## Next session
 
-There is no more planned work in this implementation plan -- Task 24 was the last of 24. If a
-session picks this up next, start by reading `PROGRESS.md` and `feature_list.json` (all 24 items
-are `done`), then `ROADMAP.md` for what was deliberately deferred (the v1.1 candidates and the
-"beyond v1.1" directions). Acceptance criterion 6 (loading this repository as a Claude Code plugin
-via `/plugin marketplace add <path>` and confirming all five `harness-*` skills are invokable) is
-the one criterion this task could not verify itself -- it needs interactive GUI steps a human has
-to run; the exact steps are in the task-24 report's section D.
+v1.2 is next: `harness diff` (score movement between two assessments of the same repository) and a
+GitHub Action that comments the score delta on a pull request. Both are listed under "Beyond v1.1"
+in `ROADMAP.md`. Two items carried forward from v1.1 that must not get lost:
+
+- **`instructions.unfilled-template`** -- the v1.1 plan deliberately did not wire
+  `placeholder.mjs` into `instructions.mjs` (only `state.mjs`). Doing so needs a new gap id, i18n
+  copy in both languages, a `references/rubric.md`/`.zh-CN.md` update, and a new fixture; it is
+  its own task, not a tack-on. `placeholder.mjs`'s `isFilledArtifact(ctx, rel)` signature is
+  already general enough to reuse without rework.
+- **Four minor findings deferred during v1.1 code review, not yet acted on:**
+  1. A mixed absent+unfilled State report shows two gap ids without naming which artefact each one
+     is about.
+  2. `templates.test.mjs`'s "zero self-inflicted gaps" assertion tolerates the new
+     `state.handoff-unfilled` gap silently rather than asserting its absence explicitly.
+  3. `placeholder.mjs` conflates "file absent" with "file unreadable" because `ctx.read` swallows
+     read errors.
+  4. `.claude/worktrees/agent-ad62e92e649417d6b` is a stale untracked full-repo copy, not covered
+     by `scan.mjs`'s `DEFAULT_IGNORE` -- a landmine for `**/` globs, not currently breaking any
+     score. Left untouched deliberately; it and `.claude/skills/` are debris awaiting a human
+     decision, not this session's to clean up.
+
+Acceptance criterion 6 from the original dogfooding task (loading this repository as a Claude Code
+plugin via `/plugin marketplace add <path>` and confirming all five `harness-*` skills are
+invokable) still needs a human to run it interactively -- unchanged from before v1.1.
 
 ## Blocked
 
