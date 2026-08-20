@@ -1,4 +1,4 @@
-import { SUBSYSTEMS, gapById } from './rubric.mjs';
+import { SUBSYSTEMS, MAX_SCORE, gapById } from './rubric.mjs';
 import { computeRoi, sortGaps } from './roi.mjs';
 import { computeLevel } from './level.mjs';
 import { t } from './i18n.mjs';
@@ -55,7 +55,7 @@ export function buildReport({
     return {
       id,
       score: r.score,
-      max: 4,
+      max: MAX_SCORE,
       cappedByEvidence: r.cappedByEvidence,
       evidence: r.evidence,
       gaps,
@@ -71,7 +71,7 @@ export function buildReport({
     repo,
     generatedAt: now.toISOString(),
     stack,
-    score: { total, max: SUBSYSTEMS.length * 4 },
+    score: { total, max: SUBSYSTEMS.length * MAX_SCORE },
     // unmetGates is a spec 6.3 superset, not a conflict with it: Task 15's
     // `assess --min-level` needs to say what's blocking the next gate, and
     // computeLevel already produces exactly that list — carrying it through

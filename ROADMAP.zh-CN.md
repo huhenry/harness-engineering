@@ -8,22 +8,6 @@ v1.1 候选的每一条，在写进这份文档之前都重新对照过当前代
 
 ## v1.1 候选
 
-### 2. 抽一个共享的 `MAX_SCORE` 常量
-
-**问题在哪：** 每个子系统的满分档位（`4`）不是单一来源，而是到处重复写的字面量。直接读代码
-确认：
-
-- `scripts/lib/report.mjs:48` 和 `:64` 各自独立写了一遍 `max: 4` / `SUBSYSTEMS.length * 4`。
-- 六个评分器（`scripts/lib/scorers/{instructions,tools,environment,state,feedback,loop}.mjs`）
-  每一个都在自己的 `ladder([...])` 调用里把满分档写成 `{ score: 4, checks: [...] }`——又是六份
-  各自独立、背后没有共享常量的"4"。
-
-**为什么 v1 没修：** 这个项目已经被"手工同步的平行列表"咬过四次了（比如下面"开发过程中记录
-下来的其他小问题"一节里的 `PRUNE_DIRS`/`DEFAULT_IGNORE`，还有 `environment.mjs` 自己注释里记录的
-`docker.runtimePins`/`manifest` 和 `CONTAINER_FILES` 那次修复）。抽一个共享的 `MAX_SCORE`
-常量是同一类修复，但要同时改 `report.mjs` 加六个评分器文件，改动面确实不小——当时发现这个问题
-的 Task 14 只负责 `report.mjs` 一个文件，判定不在那次任务范围内是对的。
-
 ## v1.1 之后：更大的方向
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，
@@ -48,7 +32,8 @@ v1.1 候选的每一条，在写进这份文档之前都重新对照过当前代
 - **`PRUNE_DIRS` 和 `DEFAULT_IGNORE` 依然是两份手工同步的列表。** `scripts/lib/scan.mjs:7` 和
   `:10` 分别定义了 `DEFAULT_IGNORE`（glob 模式）和 `PRUNE_DIRS`（一个装目录名的 `Set`）；改一份
   不改另一份，可能会悄悄让目录遍历的过滤重新出现漏洞。直接读文件确认依然存在。从 Task 4 起就记
-  过这个风险，一直不算紧急，没有并进上面第 2 条，但本质上是同一类问题。
+  过这个风险，跟 v1.1 里已经修好的 `MAX_SCORE` 重复问题本质上是同一类"手工同步列表"风险，
+  但没有并进那次修复，依然是个未解决的问题。
 - **示例 fixtures 里有一处外观上的不一致。** `fixtures/good-repo/go.sum` 和 `fixtures/mid-repo/
   go.sum` 都锁定了 `github.com/lib/pq`，但对应的 `go.mod` 里没有匹配的 `require` 行，
   `main.go` 里也没有导入它。直接读两份文件确认依然存在。这两个 fixture 本来就是为评分逻辑准备

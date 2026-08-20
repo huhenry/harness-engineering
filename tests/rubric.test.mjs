@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SUBSYSTEMS, GAPS, gapById, gapsFor } from '../scripts/lib/rubric.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { SUBSYSTEMS, GAPS, MAX_SCORE, gapById, gapsFor } from '../scripts/lib/rubric.mjs';
 import { MESSAGES } from '../scripts/lib/i18n.mjs';
 
 test('subsystem order is fixed', () => {
@@ -59,4 +62,33 @@ test('every presupposedBy names a real gap in the SAME subsystem', () => {
     assert.equal(pre.subsystem, g.subsystem,
       `${g.id} (${g.subsystem}) presupposedBy points at ${pre.id} (${pre.subsystem}) -- must be same subsystem`);
   }
+});
+
+const LIB = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'lib');
+
+test('MAX_SCORE is the rubric top rung', () => {
+  assert.equal(MAX_SCORE, 4);
+});
+
+// This project has been bitten four times by hand-synced parallel lists
+// drifting apart (see scan.mjs's PRUNE_DIRS/DEFAULT_IGNORE and
+// environment.mjs's own header comments). The top rung used to be seven
+// independent literal 4s. This test is the guard that they stay collapsed:
+// no scorer may write its top rung as a bare number again.
+test('no scorer hardcodes its top rung as a literal', () => {
+  for (const id of SUBSYSTEMS) {
+    const src = readFileSync(join(LIB, 'scorers', `${id}.mjs`), 'utf8');
+    assert.ok(
+      !/\{\s*score:\s*4\s*,/.test(src),
+      `${id}.mjs still writes its top rung as a literal 4 — use MAX_SCORE`,
+    );
+    assert.match(src, /MAX_SCORE/, `${id}.mjs must import MAX_SCORE`);
+  }
+});
+
+test('report.mjs does not hardcode the per-subsystem or total max', () => {
+  const src = readFileSync(join(LIB, 'report.mjs'), 'utf8');
+  assert.ok(!/max:\s*4\b/.test(src), 'report.mjs still writes `max: 4`');
+  assert.ok(!/SUBSYSTEMS\.length\s*\*\s*4\b/.test(src), 'report.mjs still writes `SUBSYSTEMS.length * 4`');
+  assert.match(src, /MAX_SCORE/);
 });

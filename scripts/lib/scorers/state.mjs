@@ -1,6 +1,7 @@
 import { parseMarkdown, findSection } from '../markdown.mjs';
 import { ladder } from './ladder.mjs';
 import { isFilledArtifact } from '../placeholder.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'state';
 
@@ -127,7 +128,7 @@ export function score({ ctx, now }) {
       { ok: hasFeatureListFile, gapId: 'state.no-feature-list' },
       { ok: !hasFeatureListFile || featureListValid, gapId: 'state.feature-list-invalid' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: !anyHandoffAbsent, gapId: 'state.no-handoff' },
       { ok: !anyHandoffUnfilled, gapId: 'state.handoff-unfilled' },
       { ok: lifecycleDocumented, gapId: 'state.lifecycle-undocumented' },

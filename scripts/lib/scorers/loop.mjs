@@ -1,5 +1,6 @@
 import { ladder } from './ladder.mjs';
 import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'loop';
 
@@ -78,7 +79,7 @@ export function score({ ctx, config }) {
       { ok: hasStopCondition, gapId: 'loop.no-stop-condition' },
       { ok: hasBudgetCap, gapId: 'loop.no-budget-cap' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: hasMakerChecker, gapId: 'loop.no-maker-checker' },
       { ok: hasRollback, gapId: 'loop.no-rollback' },
     ] },

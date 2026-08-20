@@ -10,24 +10,6 @@ first noticed. The larger directions at the end come from the project's original
 
 ## v1.1 candidates
 
-### 2. A shared `MAX_SCORE` constant
-
-**What's wrong:** The top rung of every subsystem's score (`4`) is a duplicated literal, not a
-single source of truth. Confirmed directly by reading the code:
-
-- `scripts/lib/report.mjs:48` and `:64` each independently write `max: 4` / `SUBSYSTEMS.length * 4`.
-- Every one of the six scorers (`scripts/lib/scorers/{instructions,tools,environment,state,
-  feedback,loop}.mjs`) hardcodes its own top rung as `{ score: 4, checks: [...] }` inside its
-  `ladder([...])` call — six more independent copies of the same "4" with no shared constant behind
-  any of them.
-
-**Why not fixed in v1:** This project has already been bitten four times by hand-synced parallel
-lists drifting apart (see e.g. `PRUNE_DIRS`/`DEFAULT_IGNORE` under "Other minor items" below, and the
-`docker.runtimePins`/`manifest` and `CONTAINER_FILES` fixes described in `environment.mjs`'s own
-comments). A shared `MAX_SCORE` constant is the same class of fix, but touches `report.mjs` plus
-all six scorer files — real, multi-file surface area that was correctly judged out of scope for the
-task that found it (Task 14, which owned `report.mjs` only).
-
 ## Beyond v1.1 — larger directions
 
 These come from the project's original design document, which lives outside this repository
@@ -57,8 +39,9 @@ a release.
 - **`PRUNE_DIRS` / `DEFAULT_IGNORE` remain two hand-synced lists.** `scripts/lib/scan.mjs:7` and
   `:10` define `DEFAULT_IGNORE` (glob patterns) and `PRUNE_DIRS` (a `Set` of bare directory names)
   separately; editing one without the other could silently reintroduce a directory-walk leak.
-  Verified still present by reading the file directly. Noted as a minor risk since Task 4; not
-  urgent enough to have been folded into item 2 above, but the same underlying class of risk.
+  Verified still present by reading the file directly. Noted as a minor risk since Task 4; the same
+  underlying class of hand-synced-list drift as the `MAX_SCORE` duplication fixed in v1.1, but this
+  one was not folded into that fix and remains open.
 - **A cosmetic inconsistency in the example fixtures.** `fixtures/good-repo/go.sum` and
   `fixtures/mid-repo/go.sum` both pin `github.com/lib/pq` with no matching `require` line in the
   corresponding `go.mod` and no import in `main.go`. Verified still present by reading both files

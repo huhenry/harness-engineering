@@ -2,6 +2,7 @@ import { ladder } from './ladder.mjs';
 import { VERIFY_ROLES } from '../config.mjs';
 import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
 import { isExecutedStatus } from '../verify-status.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'feedback';
 
@@ -125,7 +126,7 @@ export function score({ ctx, config, verifyReport }) {
       { ok: !testObservedFail, gapId: 'feedback.commands-failing' },
       { ok: secondCheckKindOk, gapId: 'feedback.single-check-kind' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: e2eOk, gapId: 'feedback.no-e2e' },
       { ok: hasCi, gapId: 'feedback.no-ci' },
       { ok: hasObservability, gapId: 'feedback.no-observability' },

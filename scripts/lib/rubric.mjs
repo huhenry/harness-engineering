@@ -1,6 +1,15 @@
 export const SUBSYSTEMS = ['instructions', 'tools', 'environment', 'state', 'feedback', 'loop'];
 
 /**
+ * The top rung of every subsystem's ladder, and the multiplier behind the
+ * total. Was seven independent literal 4s (report.mjs twice, once in each of
+ * the six scorers) with no shared constant behind any of them — the same
+ * class of hand-synced duplication that has bitten this codebase four times
+ * already.
+ */
+export const MAX_SCORE = 4;
+
+/**
  * `presupposedBy` names another gap in the SAME subsystem whose presence
  * makes this one meaningless — "Progress file is stale" presupposes a
  * progress file, which "No progress file" just said does not exist, so

@@ -1,6 +1,7 @@
 import { ladder } from './ladder.mjs';
 import { signatureFor } from '../stack.mjs';
 import { isExecutedStatus } from '../verify-status.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'environment';
 
@@ -87,7 +88,7 @@ export function score({ ctx, stack, config, verifyReport }) {
     { score: 3, checks: [
       { ok: hasBootstrapScript, gapId: 'environment.no-bootstrap' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: hasContainer, gapId: 'environment.no-container' },
       { ok: bootstrapPassed, gapId: 'environment.bootstrap-fails' },
     ] },
