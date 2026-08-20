@@ -2,10 +2,13 @@ export const SUBSYSTEMS = ['instructions', 'tools', 'environment', 'state', 'fee
 
 /**
  * The top rung of every subsystem's ladder, and the multiplier behind the
- * total. Was seven independent literal 4s (report.mjs twice, once in each of
+ * total. Was eight independent literal 4s (report.mjs twice, once in each of
  * the six scorers) with no shared constant behind any of them — the same
  * class of hand-synced duplication that has bitten this codebase four times
- * already.
+ * already. (2 + 6 = 8. The commit that did the collapse, and four documents
+ * that described it, all said "seven"; the arithmetic in the parenthetical
+ * refuted it in the same sentence. Corrected everywhere except the commit
+ * message, which is history.)
  */
 export const MAX_SCORE = 4;
 

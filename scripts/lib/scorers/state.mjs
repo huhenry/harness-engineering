@@ -83,10 +83,23 @@ const HANDOFF_ARTEFACTS = [
  * for the same reason it always has: `ctx.list` respects the config's
  * ignore patterns and `ctx.exists` does not, so a root-level artefact
  * inside an ignored path is still a candidate.
+ *
+ * Adding `path` also means a `state.no-handoff` for one artefact and a
+ * `state.handoff-unfilled` for the other are now two attributable facts
+ * rather than two sentences that each name both files.
  */
 function classifyHandoffArtefact(ctx, name) {
-  const candidates = new Set(ctx.list([`**/${name}`]));
+  // The root copy is seeded FIRST so that, when several copies qualify, the
+  // one this report names is the canonical one rather than whichever path
+  // the glob happened to sort first. Iteration order decides only which
+  // path is reported, never the state -- 'filled' still means "any copy is
+  // filled" and 'unfilled' still means "no copy is" regardless of order.
+  // Without this, assessing this very repository reported its handoff
+  // evidence at a copy inside an untracked stale worktree directory, which
+  // is both useless to a reader and machine-specific.
+  const candidates = new Set();
   if (ctx.exists(name)) candidates.add(name);
+  for (const rel of ctx.list([`**/${name}`])) candidates.add(rel);
   if (candidates.size === 0) return { state: 'absent', path: null };
   for (const rel of candidates) {
     if (isFilledArtifact(ctx, rel)) return { state: 'filled', path: rel };

@@ -26,18 +26,25 @@ should be able to trust it instead of re-deriving state from the diff.
   never filled in" (a scope expansion beyond the original plan, authorized mid-flight). Report
   rendering now suppresses a gap that presupposes a file another gap already says is missing (e.g.
   "progress file is stale" no longer appears alongside "no progress file"). The top-rung score of 4
-  is now a single `MAX_SCORE` constant in `rubric.mjs` instead of seven hand-written literals.
+  is now a single `MAX_SCORE` constant in `rubric.mjs` instead of eight hand-written literals.
   `install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files so their
   commands resolve without asking the user for a path, scoped to skills actually copied from the
   source checkout so a pre-existing third-party skill is never rewritten. Baseline fixture scores
   (`bad-repo`/`mid-repo`/`good-repo`) and this repository's own self-assessment (23/24, L5) are
-  unchanged — this was hardening, not a scoring behavior change. Full suite at 506/506.
+  unchanged — this was hardening, not a scoring behavior change.
+- v1.1 whole-branch review and its fix wave: the handoff gaps now name the artefact each one is
+  actually about instead of both naming both files, `state.handoff-unfilled`'s explanation no
+  longer asserts a reason it cannot know, gap suppression covers 9 declared pairs instead of 2
+  (with a written bar for adding any more), `install.sh`'s substitution no longer rewrites the
+  skills' own explanation of the placeholder, and `ROADMAP.md` records what the placeholder rule
+  still does not cover. Text and rendering only — no score moved.
 
 ## In Progress
 
-- v1.2: `harness diff` (score movement between two assessments of the same repository) and a
-  GitHub Action that comments the harness score delta on a pull request, turning the assessment
-  into a review-time signal. Both are listed under "Beyond v1.1" in `ROADMAP.md`.
+- v1.1 hardening sits on the `v1.1-hardening` branch, reviewed and fixed, waiting to be merged
+  into `main`. Nothing else is in flight: the "Beyond v1.1" items in `ROADMAP.md` (`harness diff`,
+  the GitHub Action, more stack detectors, graph engineering, a web dashboard) are directions, and
+  none of them is started.
 
 ## Blocked
 

@@ -6,48 +6,49 @@ that only ever lived in one session's head can survive into the next one.
 
 ## Previous session
 
-v1.1 hardening is complete and merged: all four `ROADMAP.md` v1.1 candidates are closed
-(commits `f15c6c5..7453d9f` on `v1.1-hardening`). In execution order: Task 1 added
-`scripts/lib/placeholder.mjs` and wired it into the State scorer so an unfilled template, or a
-file byte-identical to a shipped template, no longer satisfies the handoff rung -- this surfaced a
-genuine plan defect (`scaffold` prepends a provenance stamp that defeated the byte-identity check;
-fixed by normalising the stamp before comparing) and one human-authorized scope expansion: a new
-gap id, `state.handoff-unfilled`, so a scaffolded-but-not-yet-filled-in handoff reports "exists but
-unfilled" rather than the misleading "no handoff doc". Task 2 made report rendering suppress a gap
-that presupposes a file another gap already says is missing (`state.progress-stale` no longer
-appears next to `state.no-progress`) -- purely a rendering change, no score moved. Task 4 made
-`install.sh` substitute the checkout's absolute path into installed `SKILL.md` files, scoped to
-skills actually copied from the source checkout after a reviewer caught the first draft rewriting
-a pre-existing third-party skill's placeholder too. Task 3 (done last, on purpose, since it touches
-every scorer) collapsed seven hand-written top-rung `4` literals into one `MAX_SCORE` constant in
-`rubric.mjs` -- pure refactor, nothing moved. Every task carried its own TDD cycle, code review, and
-at least one fix round; full details are in
-`.superpowers/sdd/2026-08-20-v1.1-hardening-plan/progress.md` and the sibling `task-N-report.md`
-files. Baseline fixture scores are unchanged (`bad-repo` 0/24 L0, `mid-repo` 11/24 L2, `good-repo`
-16/24 L3) and this repository's own self-assessment is still 23/24 L5. Full suite: 506/506.
+v1.1 hardening is finished on the `v1.1-hardening` branch and has been through a whole-branch
+review plus one fix wave. It is **not merged to `main` yet** -- merging is the next mechanical step.
+All four `ROADMAP.md` v1.1 candidates are closed. In execution order: `scripts/lib/placeholder.mjs`
+was added and wired into the State scorer so an unfilled template no longer satisfies the handoff
+rung -- this surfaced a genuine defect (`scaffold` prepends a provenance stamp that defeated the
+byte-identity check; fixed by stripping the stamp before comparing) and one scope expansion, a new
+gap id `state.handoff-unfilled`, so a scaffolded-but-not-yet-filled-in handoff reports "exists but
+unfilled" rather than the misleading "no handoff doc". Report rendering now suppresses a gap that
+presupposes a file another gap already says is missing -- rendering only, no score moved.
+`install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files, scoped to
+skills actually copied from the source checkout after a reviewer caught the first draft rewriting a
+pre-existing third-party skill's placeholder too. Eight hand-written top-rung `4` literals
+collapsed into one `MAX_SCORE` constant in `rubric.mjs` -- pure refactor.
+
+The review's fix wave then closed everything it raised: the handoff gaps now name the specific
+artefact each one is about (the mixed absent+unfilled report used to tell the user to open a file
+it had just said was missing), `state.handoff-unfilled`'s explanation no longer asserts a reason it
+cannot know, gap suppression grew from 2 declared pairs to 9 (four more subsystems) under a written
+bar for adding any more, `install.sh`'s substitution no longer corrupts the skills' own explanation
+of the placeholder, and the ROADMAP records what the placeholder rule still does not cover.
+
+Baseline fixture scores are unchanged (`bad-repo` 0/24 L0, `mid-repo` 11/24 L2, `good-repo` 16/24
+L3) and this repository's own self-assessment is still 23/24 L5.
 
 ## Next session
 
-v1.2 is next: `harness diff` (score movement between two assessments of the same repository) and a
-GitHub Action that comments the score delta on a pull request. Both are listed under "Beyond v1.1"
-in `ROADMAP.md`. Two items carried forward from v1.1 that must not get lost:
+Merge `v1.1-hardening` into `main` first. Then v1.2: `harness diff` (score movement between two
+assessments of the same repository) and a GitHub Action that comments the score delta on a pull
+request. Both are listed under "Beyond v1.1" in `ROADMAP.md` and neither is started.
 
-- **`instructions.unfilled-template`** -- the v1.1 plan deliberately did not wire
-  `placeholder.mjs` into `instructions.mjs` (only `state.mjs`). Doing so needs a new gap id, i18n
-  copy in both languages, a `references/rubric.md`/`.zh-CN.md` update, and a new fixture; it is
-  its own task, not a tack-on. `placeholder.mjs`'s `isFilledArtifact(ctx, rel)` signature is
-  already general enough to reuse without rework.
-- **Four minor findings deferred during v1.1 code review, not yet acted on:**
-  1. A mixed absent+unfilled State report shows two gap ids without naming which artefact each one
-     is about.
-  2. `templates.test.mjs`'s "zero self-inflicted gaps" assertion tolerates the new
-     `state.handoff-unfilled` gap silently rather than asserting its absence explicitly.
-  3. `placeholder.mjs` conflates "file absent" with "file unreadable" because `ctx.read` swallows
-     read errors.
-  4. `.claude/worktrees/agent-ad62e92e649417d6b` is a stale untracked full-repo copy, not covered
-     by `scan.mjs`'s `DEFAULT_IGNORE` -- a landmine for `**/` globs, not currently breaking any
-     score. Left untouched deliberately; it and `.claude/skills/` are debris awaiting a human
-     decision, not this session's to clean up.
+Two things carried forward that must not get lost:
+
+- **`instructions.unfilled-template`.** `placeholder.mjs` is wired into `state.mjs` only. Wiring it
+  into `instructions.mjs` needs a new gap id, i18n copy in both languages, a
+  `references/rubric.md`/`.zh-CN.md` update, and a new fixture; it is its own task, not a tack-on.
+  `isFilledArtifact(ctx, rel)`'s signature is already general enough to reuse without rework. It is
+  the first step of the "Still open from v1.1" ROADMAP item, which is where the full statement of
+  what the placeholder rule does *not* yet cover lives.
+- **Two deliberately deferred items, both recorded rather than fixed.** `placeholder.mjs` treats an
+  unreadable file the same as an unfilled one; the behaviour stays (it errs toward denying credit)
+  and the gap text was reworded so it no longer claims to know which of the two it saw. And the
+  refactor guard in `tests/rubric.test.mjs` matches `score: 4` but not `score : 4` with a space --
+  it catches the likelier regression, and the worst case is cosmetic, so it was left alone.
 
 Acceptance criterion 6 from the original dogfooding task (loading this repository as a Claude Code
 plugin via `/plugin marketplace add <path>` and confirming all five `harness-*` skills are

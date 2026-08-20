@@ -408,6 +408,52 @@ test('one absent artefact plus one unfilled artefact reports both gap ids', () =
   assert.deepEqual(r.gapVars['state.handoff-unfilled'], { artefacts: 'clean-state-checklist.md' });
 });
 
+// Evidence must point at the artefact a reader can act on. Both copies here
+// are filled, so both are valid answers to "is this artefact filled?" and
+// the score is 4 either way -- but only one of them is the canonical
+// location. Assessing this repository itself produced the concrete failure
+// this pins: the glob's first hit was a copy inside an untracked stale
+// worktree directory, so the report cited machine-specific debris as its
+// evidence for a document sitting in the repo root. The deep copy is listed
+// first here on purpose; the harness's `list` preserves insertion order, so
+// without the root-first seeding this test fails.
+test('evidence names the canonical root artefact when several copies are filled', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'nested/copy/session-handoff.md': '# Handoff\n\nA vendored but filled-in copy.\n',
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'clean-state-checklist.md': '# Checklist\n\n- [x] clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+  const handoff = r.evidence.find((e) => e.note === 'handoff doc');
+  assert.equal(handoff.path, 'session-handoff.md');
+});
+
+// An unfilled artefact is a real file the user can open, so it belongs in
+// the evidence array too -- leaving it out made the JSON report of "the
+// file exists but is a template" indistinguishable from "the file is
+// missing", which is the one distinction state.handoff-unfilled exists for.
+test('an unfilled artefact is recorded as evidence, marked as unfilled', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  const checklist = r.evidence.find((e) => e.path === 'clean-state-checklist.md');
+  assert.equal(checklist.note, 'unfilled template');
+  // An absent artefact contributes nothing: there is no path to point at.
+  const absent = score(input({
+    files: rungThreeFiles({ 'session-handoff.md': '# Handoff\n\nShipped it.\n' }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(absent.evidence.filter((e) => e.path === 'clean-state-checklist.md').length, 0);
+});
+
 // The mixed case, asserted on the RENDERED PROSE rather than on gap ids.
 // Every id-level assertion above passed while the report simultaneously
 // told the user to "open the existing session-handoff.md ... the file is

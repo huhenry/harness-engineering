@@ -167,7 +167,7 @@ test('workflow commands resolve and actually execute when the skill is installed
     // sitting in ordinary prose gets rewritten too. A shipped version of
     // these skills explained the mechanism with the literal placeholder in
     // the sentence, and a real install turned it into "it only works in the
-    // braced /Users/.../harness-engineering form" -- prose that is simply
+    // braced <absolute path of the checkout> form" -- prose that is simply
     // false and that no test looked at. Prose must name the placeholder
     // without writing it (e.g. "the braced CLAUDE_PLUGIN_ROOT placeholder").
     for (const m of raw.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}/g)) {

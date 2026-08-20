@@ -267,7 +267,7 @@ test('install.sh substitutes the checkout path into installed skill text', () =>
 // explanation of the placeholder just as readily as it rewrites a command.
 // A shipped version of these skills said "it only works in the braced
 // ${CLAUDE_PLUGIN_ROOT} form", and a real install turned that into "it only
-// works in the braced /Users/.../harness-engineering form" -- a sentence
+// works in the braced <absolute path of the checkout> form" -- a sentence
 // that is simply false, in the file whose whole job is telling an agent how
 // to find the scripts. The existing tests only checked that the placeholder
 // was gone, which that damaged text passes.

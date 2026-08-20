@@ -63,7 +63,7 @@ for t in $TARGETS; do
   # there is nothing explanatory for this substitution to mangle. An earlier
   # version of the skills did embed it in their own explanation, and a real
   # install produced the sentence "it only works in the braced
-  # /Users/.../harness-engineering form". tests/skills.test.mjs pins the
+  # <the checkout's absolute path> form". tests/skills.test.mjs pins the
   # position rule so that cannot come back.
   #
   # The loop below is space-safe: POSIX field splitting happens BEFORE

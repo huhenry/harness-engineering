@@ -28,7 +28,7 @@
     { "id": "placeholder-rule", "title": "placeholder.mjs: an unfilled template or a byte-identical vendored copy no longer satisfies the State handoff rung", "status": "done" },
     { "id": "handoff-unfilled-gap", "title": "New gap id state.handoff-unfilled distinguishing a missing handoff doc from one that exists but was never filled in", "status": "done" },
     { "id": "gap-suppression", "title": "Render-time suppression of a gap that presupposes a file another gap already reports as missing (e.g. state.progress-stale alongside state.no-progress)", "status": "done" },
-    { "id": "max-score-constant", "title": "Single-source MAX_SCORE constant in rubric.mjs, collapsing seven hand-written top-rung 4 literals across report.mjs and the six scorers", "status": "done" },
+    { "id": "max-score-constant", "title": "Single-source MAX_SCORE constant in rubric.mjs, collapsing eight hand-written top-rung 4 literals across report.mjs (twice) and the six scorers", "status": "done" },
     { "id": "install-path-substitution", "title": "install.sh substitutes this checkout's absolute path into installed SKILL.md files, scoped to skills actually copied from the source so a pre-existing third-party skill is never rewritten", "status": "done" }
   ]
 }

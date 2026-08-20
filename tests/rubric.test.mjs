@@ -98,8 +98,9 @@ test('MAX_SCORE is the rubric top rung', () => {
 
 // This project has been bitten four times by hand-synced parallel lists
 // drifting apart (see scan.mjs's PRUNE_DIRS/DEFAULT_IGNORE and
-// environment.mjs's own header comments). The top rung used to be seven
-// independent literal 4s. This test is the guard that they stay collapsed:
+// environment.mjs's own header comments). The top rung used to be eight
+// independent literal 4s -- one per scorer, plus report.mjs's `max: 4` and
+// `SUBSYSTEMS.length * 4`. This test is the guard that they stay collapsed:
 // no scorer may write its top rung as a bare number again.
 test('no scorer hardcodes its top rung as a literal', () => {
   for (const id of SUBSYSTEMS) {
