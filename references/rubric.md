@@ -85,6 +85,32 @@ Gap ids: `state.no-progress`, `state.progress-stale`, `state.progress-incomplete
 `state.no-feature-list`, `state.feature-list-invalid`, `state.no-handoff`,
 `state.handoff-unfilled`, `state.lifecycle-undocumented`.
 
+### What the "unfilled template" check does not catch
+
+Stated here for the same reason the [README's Safety section](../README.md#safety) states the
+blocklist's ceiling: a limit disclosed is worth more than a limit implied. The check has two rules
+— an unreplaced `FILL:` marker (Rule A), and byte-identity with a shipped template after a leading
+`scaffold` provenance line is stripped (Rule B). Rule B is exact byte comparison, and "byte" means
+byte:
+
+- A CRLF checkout of a vendored template, a single differing trailing newline, or one edited
+  character anywhere in the file, all defeat it.
+- So does a template whose *body* changed between tool versions. The provenance line is matched by
+  shape rather than by version number and survives a release; the body is not, and does not.
+- Six of this project's markdown templates carry a `FILL:` marker, so Rule A still catches every
+  case above for those. `clean-state-checklist.md` is the one handoff artefact with no marker in
+  either language — for that file Rule B is the only defence, so any of the above lets an untouched
+  vendored copy score as filled in.
+- In an install that ships `scripts/` without `templates/` next to it (a script-only plugin cache
+  copy, for example — a shape `assess` supports and is tested for), there is nothing to compare
+  against: Rule B silently becomes a no-op for the whole run, with no note in the report. Rule A is
+  unaffected.
+
+Every one of these fails in the *permissive* direction: Rule B does not fire, and an untouched
+template counts as a filled-in document. Read "byte-identical" as exactly that and nothing broader.
+The check errs the other way in one case only — a file this tool cannot read at all is treated as
+unfilled, which costs a point rather than granting one that was not earned.
+
 ## Feedback (`feedback.*`)
 
 The highest-weighted subsystem in the rubric's ROI math, and the one this project exists to make

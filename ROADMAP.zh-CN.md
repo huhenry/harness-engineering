@@ -4,8 +4,23 @@
 不是事后为了凑数编出来的。每一条都会说清楚：发现了什么、怎么核实的、为什么 v1 没修。
 
 v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则、渲染期 gap 抑制、共享的
-`MAX_SCORE` 常量，以及 `install.sh` 的路径替换。每一条在关闭之前都重新对照过当前代码。
-下面更大的方向来自项目最初的设计文档。
+`MAX_SCORE` 常量，以及 `install.sh` 的路径替换。其中有一条实际交付的范围比原条目要窄，
+剩下的部分记在下面，而不是跟着条目一起删掉。再往后那些更大的方向来自项目最初的设计文档。
+
+## v1.1 遗留、仍然未解决的部分
+
+- **没填写的模板在绝大多数地方依然算作"内容"。** 占位符规则
+  （`scripts/lib/placeholder.mjs`）只接进了一处检查：`scripts/lib/scorers/state.mjs` 里第 4 级
+  的交接产物。`instructions`、`tools`、`loop`，以及 `state` 的另外三级，依然会把一份自己都写着
+  "这是占位符"的文件算作内容。直接实测过：往一个空目录 `scaffold --apply`，再对它跑 `assess`，
+  得到 **12/24，其中 Tools 4/4、Loop 4/4**——这两项完全是靠没人读过的文件拿到的。
+  `templates/en/Makefile` 开头几行自己就写着"下面每一个 target 在 FILL 那些行被替换之前都只是
+  占位符"；三份 `loop/*.md` 模板和 `evaluator-rubric.md` 都带着 `FILL:` 标记；`PROGRESS.md` 和
+  `feature_list.json` 也是同样的方式把 State 顶到 3/4。这不是回归——v1.1 本来就只覆盖交接那一
+  级，这是它之前就有的状态——但要把它关掉，是要跨好几个 scorer 重新定义"存在"是什么意思，
+  而不是再多调一次 `isFilledArtifact`：所有 fixture 的分数和这个仓库自己的自评分都得重新推导。
+  `instructions.unfilled-template` 是顺理成章的第一步，而且它本身就是一个独立任务：新的 gap
+  id、双语文案、`references/rubric.md` 两个语言版本各加一行，外加一个新 fixture。
 
 ## v1.1 之后：更大的方向
 
@@ -44,3 +59,9 @@ v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则
 完整表述见 [README 的安全一节](README.zh-CN.md#安全)和 `skills/harness-verify/SKILL.md` 的
 Limitations 一节。这些写在那两处而不是这里，是因为经过七轮对抗式评审之后，这个项目自己的结论是
 ：下一步该做的是如实披露，而不是再打一轮补丁。
+
+"模板没填写"这项检查里的逐字节比较也有同一类天花板：CRLF 换行的检出、结尾换行不一致、任意一个
+字符的改动、模板正文跨版本变过，都会让它失效；而在只带 `scripts/`、没有 `templates/` 的安装形
+态里，它会静默变成空操作。完整表述写在
+[`references/rubric.zh-CN.md`](references/rubric.zh-CN.md#模板没填写这项检查抓不到什么)，
+紧挨着它所限定的那条规则，不在这里重复。

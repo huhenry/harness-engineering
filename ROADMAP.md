@@ -6,8 +6,26 @@ entry says what was found, how it was verified, and why it was not fixed in v1.
 
 v1.1 shipped all four candidates that used to be tracked in this section: the placeholder rule,
 render-time gap suppression, the shared `MAX_SCORE` constant, and `install.sh` path substitution.
-Each was re-verified against the current code before being closed out. The larger directions below
-come from the project's original design document.
+One of them shipped narrower than the item it closed, and the remainder is recorded below rather
+than deleted with the item. The larger directions after that come from the project's original
+design document.
+
+## Still open from v1.1
+
+- **An unfilled template still counts as content almost everywhere.** The placeholder rule
+  (`scripts/lib/placeholder.mjs`) is wired into exactly one check: the rung-4 handoff artefacts in
+  `scripts/lib/scorers/state.mjs`. `instructions`, `tools`, `loop` and the other three rungs of
+  `state` still credit a file that says of itself that it is a placeholder. Measured directly by
+  running `scaffold --apply` into an empty directory and then `assess` on it: **12/24, with Tools
+  4/4 and Loop 4/4** — both earned entirely by files nobody has read. `templates/en/Makefile`'s own
+  opening lines say "Every target below is a placeholder until the FILL lines are replaced"; all
+  three `loop/*.md` templates and `evaluator-rubric.md` carry `FILL:` markers; `PROGRESS.md` and
+  `feature_list.json` carry State to 3/4 the same way. This is not a regression — it is the state
+  of the world before v1.1, which was scoped to the handoff rung — but closing it is a real change
+  to what "exists" means across several scorers, not one more call to `isFilledArtifact`: every
+  fixture score and this repository's own self-assessment would have to be re-derived from it.
+  `instructions.unfilled-template` is the natural first step, and it is its own task: a new gap id,
+  bilingual copy, a `references/rubric.md` row in both languages, and a new fixture.
 
 ## Beyond v1.1 — larger directions
 
@@ -54,3 +72,10 @@ queue. See the [README's Safety section](README.md#safety) and
 `skills/harness-verify/SKILL.md`'s Limitations section for the full statement. These are listed
 there, not here, because the project's own conclusion after seven rounds of adversarial review was
 that the right next step is disclosure, not another round of patching.
+
+The "unfilled template" check's byte-identity rule has a ceiling of the same kind: a CRLF checkout,
+a trailing-newline difference, a one-character edit, or a template body that changed between
+versions all defeat it, and in an install that ships `scripts/` without `templates/` it silently
+becomes a no-op. Written up in full in
+[`references/rubric.md`](references/rubric.md#what-the-unfilled-template-check-does-not-catch),
+next to the rule it qualifies, rather than repeated here.
