@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { score, validateFeatureList } from '../../scripts/lib/scorers/state.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { globToRegExp } from '../../scripts/lib/scan.mjs';
@@ -303,4 +306,69 @@ test('AGENTS.md missing entirely means lifecycle is undocumented', () => {
   const r = score(input({ files, mtimes: { 'PROGRESS.md': FRESH } }));
   assert.ok(r.gapIds.includes('state.lifecycle-undocumented'));
   assert.equal(r.score, 3);
+});
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const readShipped = (rel) => readFileSync(join(REPO_ROOT, 'templates', 'en', rel), 'utf8');
+
+/** Everything state needs for rung 3, so rung 4 is the only thing in play. */
+function rungThreeFiles(extra = {}) {
+  return {
+    'PROGRESS.md': DONE_DOING_BLOCKED,
+    'feature_list.json': VALID_FEATURE_LIST,
+    'AGENTS.md': AGENTS_WITH_LIFECYCLE,
+    ...extra,
+  };
+}
+
+// ROADMAP#4: a repository that merely vendors this project's templates must
+// not pass state.no-handoff without ever writing a real handoff document.
+test('vendored, unedited templates do not satisfy the handoff rung', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'templates/en/session-handoff.md': readShipped('session-handoff.md'),
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.no-handoff'));
+});
+
+test('real, filled-in handoff artefacts still satisfy the handoff rung', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser. Next: wire the CLI.\n',
+      'clean-state-checklist.md': '# Checklist\n\n- [x] git status clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
+});
+
+// The any-depth search itself is deliberate and stays: a repo that keeps its
+// handoff at docs/session-handoff.md should get credit for it.
+test('a filled handoff at any depth still counts', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'docs/session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'docs/clean-state-checklist.md': '# Checklist\n\n- [x] clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+});
+
+// Mixed case: a real handoff plus a vendored checklist is still incomplete.
+test('one real artefact plus one vendored template does not satisfy the rung', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.no-handoff'));
 });

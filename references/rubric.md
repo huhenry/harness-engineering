@@ -79,7 +79,7 @@ Progress file candidates: `PROGRESS.md`, `claude-progress.md`, `docs/PROGRESS.md
 | 1 | A progress file exists. |
 | 2 | It was modified (by git history, falling back to filesystem mtime) within the last 30 days, **and** it has headings matching done/in-progress/blocked, all three. |
 | 3 | `feature_list.json` exists **and** validates (every feature has a non-empty, unique `id`, a non-empty `title`, and a `status` in `todo`/`in-progress`/`done`/`blocked`). |
-| 4 | `session-handoff.md` and `clean-state-checklist.md` both exist (at any depth), **and** `AGENTS.md` documents a session-start/session-end lifecycle. |
+| 4 | `session-handoff.md` and `clean-state-checklist.md` both exist **as filled-in files** (at any depth), **and** `AGENTS.md` documents a session-start/session-end lifecycle. A file that still carries an unfilled `FILL:` marker, or that is byte-identical to one of this project's shipped templates, does not count — vendoring the template is not writing the document. |
 
 Gap ids: `state.no-progress`, `state.progress-stale`, `state.progress-incomplete`,
 `state.no-feature-list`, `state.feature-list-invalid`, `state.no-handoff`,

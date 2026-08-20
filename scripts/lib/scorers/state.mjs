@@ -1,5 +1,6 @@
 import { parseMarkdown, findSection } from '../markdown.mjs';
 import { ladder } from './ladder.mjs';
+import { isFilledArtifact } from '../placeholder.mjs';
 
 export const id = 'state';
 
@@ -36,9 +37,25 @@ export function validateFeatureList(data) {
   return problems;
 }
 
-/** True when `name` exists at the repo root or at any depth beneath it. */
-function existsAnyDepth(ctx, name) {
-  return ctx.exists(name) || ctx.list([`**/${name}`]).length > 0;
+/**
+ * True when a *filled-in* `name` exists at the repo root or at any depth
+ * beneath it.
+ *
+ * The any-depth search is deliberate and unchanged — a repository keeping
+ * its handoff doc at docs/session-handoff.md should get credit for it. What
+ * changed (ROADMAP#4) is that an unfilled template no longer counts: a repo
+ * that merely vendors this project's templates/, or has a templates/
+ * directory of its own containing a file with one of these names, used to
+ * pass state.no-handoff without ever writing a real handoff document.
+ *
+ * The root `ctx.exists` branch is kept ahead of the glob for the same reason
+ * it was there before: `ctx.list` respects the config's ignore patterns and
+ * `ctx.exists` does not, so a root-level artefact inside an ignored path
+ * still counts.
+ */
+function filledExistsAnyDepth(ctx, name) {
+  if (ctx.exists(name) && isFilledArtifact(ctx, name)) return true;
+  return ctx.list([`**/${name}`]).some((rel) => isFilledArtifact(ctx, rel));
 }
 
 export function score({ ctx, now }) {
@@ -63,8 +80,8 @@ export function score({ ctx, now }) {
   const featureListData = hasFeatureListFile ? ctx.readJson('feature_list.json') : null;
   const featureListValid = hasFeatureListFile && validateFeatureList(featureListData).length === 0;
 
-  const hasHandoff = existsAnyDepth(ctx, 'session-handoff.md');
-  const hasChecklist = existsAnyDepth(ctx, 'clean-state-checklist.md');
+  const hasHandoff = filledExistsAnyDepth(ctx, 'session-handoff.md');
+  const hasChecklist = filledExistsAnyDepth(ctx, 'clean-state-checklist.md');
   // Only AGENTS.md is checked here (not CLAUDE.md as instructions/tools do)
   // — the table names AGENTS.md specifically for the session-lifecycle
   // check. This is a plain full-text search over the raw body, not a

@@ -55,7 +55,7 @@ single source of truth. Confirmed directly by reading the code:
   any of them.
 
 **Why not fixed in v1:** This project has already been bitten four times by hand-synced parallel
-lists drifting apart (see e.g. `PRUNE_DIRS`/`DEFAULT_IGNORE` in item 4 below, and the
+lists drifting apart (see e.g. `PRUNE_DIRS`/`DEFAULT_IGNORE` under "Other minor items" below, and the
 `docker.runtimePins`/`manifest` and `CONTAINER_FILES` fixes described in `environment.mjs`'s own
 comments). A shared `MAX_SCORE` constant is the same class of fix, but touches `report.mjs` plus
 all six scorer files — real, multi-file surface area that was correctly judged out of scope for the
@@ -89,46 +89,6 @@ substitute that absolute path into the installed `SKILL.md` text in place of the
 this task was explicitly told not to touch, and is exactly the kind of change that needs the
 plugin-vs-non-plugin distribution story thought through deliberately rather than as a side effect
 of a docs task.
-
-### 4. A template file should not satisfy the check it is a template for
-
-**What's wrong:** `state.mjs` looks for handoff artefacts at any depth:
-
-```js
-function existsAnyDepth(ctx, name) {
-  return ctx.exists(name) || ctx.list([`**/${name}`]).length > 0;
-}
-```
-
-The any-depth search is deliberate and right — a repository that keeps its handoff doc at
-`docs/session-handoff.md` should get credit for it. What is wrong is that an *unfilled template*
-counts as a real artefact. Measured in this repository:
-
-```
-session-handoff.md      -> ["session-handoff.md",
-                            "templates/en/session-handoff.md",
-                            "templates/zh/session-handoff.md"]
-clean-state-checklist.md -> ["clean-state-checklist.md",
-                            "templates/en/clean-state-checklist.md",
-                            "templates/zh/clean-state-checklist.md"]
-```
-
-So a repository that merely vendors these templates — or has a `templates/` directory of its own
-containing a file with one of these names — passes `state.no-handoff` without ever writing a real
-handoff document. That is a false positive in a rubric whose entire value is not giving credit for
-things that do not exist.
-
-**Note on this repository's own score:** it does not inflate it. The root `session-handoff.md` and
-`clean-state-checklist.md` are real, filled-in files (they appear first in the lists above), so
-State would score 4 with or without the templates present. This was checked before publishing an
-L5 badge, precisely because a self-assessment that flattered itself would be worse than no badge.
-
-**Why not fixed in v1:** the fix is not just "exclude `templates/`" — that would special-case one
-directory name while leaving the general problem (a placeholder counting as content) untouched. The
-right shape is probably for the scorer to reject files that still contain unfilled `FILL:`
-placeholders, which is a real change to what "exists" means across several scorers and needs its own
-fixture coverage. Found during Task 24 by the implementer, who reported it rather than quietly
-enjoying the free points.
 
 ## Beyond v1.1 — larger directions
 
