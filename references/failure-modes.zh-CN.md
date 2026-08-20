@@ -2,7 +2,7 @@
 
 [《Learn Harness Engineering》](https://walkinglabs.github.io/learn-harness-engineering/en/) 是这个
 工具落地的上游课程（见根目录 [README](../README.zh-CN.md#致谢)）。课程用叙述的方式讲清楚了 harness
-要防住的是哪些失败模式。这份文档是两者之间的桥：每一讲对应的具体失败模式，映射到这个工具 37 个
+要防住的是哪些失败模式。这份文档是两者之间的桥：每一讲对应的具体失败模式，映射到这个工具 38 个
 gap id（`scripts/lib/rubric.mjs`）里检查它的那一个或几个。
 
 这里覆盖了课程 14 讲里的 13 讲。第 14 讲《From Single Loops to Graph Engineering》没有纳入这份文档

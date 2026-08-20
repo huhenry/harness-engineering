@@ -161,3 +161,27 @@ test('README Install section states install.sh ships skill text only and the two
   assert.match(zh, /不等价/, 'README.zh-CN.md must say the two paths are not equivalent');
   assert.match(zh, /scripts\//, 'README.zh-CN.md must mention that install.sh does not copy scripts/');
 });
+
+// Fix round 2, Finding 4: five shipped docs restated GAPS.length as a
+// hardcoded "37" instead of deriving it, and every one of them silently
+// went stale the moment fix round 1 (Finding 3) added state.handoff-unfilled
+// -- the true count moved to 38 without any of these five noticing. Derive
+// the number from GAPS.length here (never hardcode it a second time) so a
+// future gap addition or removal fails this test loudly instead of leaving
+// five documents quietly wrong again. \s+ tolerates the count and the word
+// "gap"/"ids" landing on either side of a markdown line-wrap, since two of
+// these five (references/failure-modes.md and its zh-CN counterpart) wrap
+// exactly there in the source text.
+test('every doc that states the gap-id count matches GAPS.length', () => {
+  const n = GAPS.length;
+  const targets = [
+    { file: 'README.md', re: new RegExp(`\\b${n}\\s+gap\\s+ids\\b`) },
+    { file: 'README.zh-CN.md', re: new RegExp(`${n}\\s+个\\s+gap\\s+id\\b`) },
+    { file: 'references/failure-modes.md', re: new RegExp(`\\b${n}\\s+gap\\s+ids\\b`) },
+    { file: 'references/failure-modes.zh-CN.md', re: new RegExp(`${n}\\s+个\\s+gap\\s+id\\b`) },
+    { file: 'AGENTS.md', re: new RegExp(`${n}-gap-id\\b`) },
+  ];
+  for (const { file, re } of targets) {
+    assert.match(read(file), re, `${file} does not state the current gap-id count (${n})`);
+  }
+});

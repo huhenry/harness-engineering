@@ -3,7 +3,7 @@
 [*Learn Harness Engineering*](https://walkinglabs.github.io/learn-harness-engineering/en/) is the
 upstream course this tool operationalizes (see the root [README](../README.md#credits)). It
 describes, in prose, the failure modes a harness is supposed to prevent. This document is the
-bridge: for each lecture, the concrete failure mode it describes, and which of this tool's 37 gap
+bridge: for each lecture, the concrete failure mode it describes, and which of this tool's 38 gap
 ids (`scripts/lib/rubric.mjs`) checks for it.
 
 This maps 13 of the course's 14 lectures. Lecture 14, *From Single Loops to Graph Engineering*, was
