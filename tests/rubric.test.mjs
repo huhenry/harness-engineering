@@ -64,6 +64,32 @@ test('every presupposedBy names a real gap in the SAME subsystem', () => {
   }
 });
 
+// Suppression is NOT render-only, whatever the mechanism's first comment
+// said: scaffold.mjs calls runAssess and reads report.subsystems.flatMap(s
+// => s.gaps), which buildReport has already filtered. So a suppressed gap
+// is also a gap `scaffold` will never write a template for. Every id
+// suppressed today has templates: [], which is why nothing scaffold does
+// has changed -- and this test is what keeps that from silently ceasing to
+// be true. The concrete case it forbids is loop.no-maker-checker ->
+// loop.none: loop.none writes the three loop/*.md files but NOT
+// evaluator-rubric.md, so wiring that pair would stop scaffold offering the
+// maker-checker rubric to repositories with no loop at all, and drop a
+// scaffolded empty repo's Loop score from 4/4 to 3/4. A subset (rather than
+// strictly empty) is allowed: if the precondition already writes everything
+// the suppressed gap would, scaffold's output is unchanged either way.
+test('no gap suppression can change what scaffold writes', () => {
+  for (const g of GAPS) {
+    if (g.presupposedBy === null) continue;
+    const pre = GAPS.find((other) => other.id === g.presupposedBy);
+    const missing = g.templates.filter((tpl) => !pre.templates.includes(tpl));
+    assert.deepEqual(
+      missing, [],
+      `${g.id} is suppressed by ${pre.id} but would scaffold ${missing.join(', ')}, which ${pre.id} does not -- `
+      + 'suppressing it would silently stop scaffold writing those files',
+    );
+  }
+});
+
 const LIB = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'lib');
 
 test('MAX_SCORE is the rubric top rung', () => {
