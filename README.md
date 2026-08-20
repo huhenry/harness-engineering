@@ -32,39 +32,40 @@ file, not written from what seemed plausible. Where useful, the real output is p
 
 There are two install paths, and **they are not equivalent** — pick based on what you need.
 
-**Claude Code plugin (recommended — works out of the box).** Add this repository as a marketplace
-source and install the `harness-engineering` plugin (see `.claude-plugin/marketplace.json`). Claude
-Code substitutes `${CLAUDE_PLUGIN_ROOT}` inside each skill's own markdown with the plugin's real
-install path, so every `harness-*` skill's documented command resolves immediately — no extra
-setup step.
+**Claude Code plugin (recommended — works out of the box, and stays working if the checkout
+moves).** Add this repository as a marketplace source and install the `harness-engineering` plugin
+(see `.claude-plugin/marketplace.json`). Claude Code substitutes `${CLAUDE_PLUGIN_ROOT}` inside each
+skill's own markdown with the plugin's real install path, so every `harness-*` skill's documented
+command resolves immediately — no extra setup step.
 
-**`install.sh` (skill text only — needs one more step).** Running `./install.sh` from a checkout
-copies the skill markdown under `skills/` into whichever agent-ecosystem directory it finds in the
-current project (`.claude/skills`, `.cursor/skills`, `.codex/skills`, `.gemini/skills`,
-`.agent/skills`; defaults to `.claude/skills` if none exist). Its own output says plainly what this
-does and doesn't do:
+**`install.sh` (skill text only, bound to this one checkout).** Running `./install.sh` from a
+checkout copies the skill markdown under `skills/` into whichever agent-ecosystem directory it finds
+in the current project (`.claude/skills`, `.cursor/skills`, `.codex/skills`, `.gemini/skills`,
+`.agent/skills`; defaults to `.claude/skills` if none exist), and substitutes this checkout's own
+absolute path for `${CLAUDE_PLUGIN_ROOT}` inside every installed `SKILL.md`, so the installed
+commands resolve immediately too. Its own output says plainly what it does and doesn't do:
 
 ```
 $ sh install.sh
 -> .claude/skills
 installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-The installed skills will ask you for a harness-engineering checkout
-path the first time a command actually needs to run. For working
-commands out of the box, install this as a Claude Code plugin instead:
+Commands in the installed skills point at this checkout:
+  <checkout>
+Move or delete that directory and the installed skills stop working.
+(scripts/ itself is never copied -- only skill text, with this
+checkout's path substituted in.)
+For a relocatable install, use the Claude Code plugin instead:
   https://github.com/huhenry/harness-engineering
 ```
 
-It **does not copy `scripts/`** — only the skill text — and none of the five target directories,
-including the default `.claude/skills`, get a `${CLAUDE_PLUGIN_ROOT}`-equivalent variable set. So
-after `install.sh` runs, the installed skill has no working path to `scripts/*.mjs` and will ask
-you for a checkout path the first time it actually needs to run one. This isn't a bug to be fixed
-by reading harder — it's a real, current limitation of the non-plugin ecosystems, listed as a
-[roadmap item](ROADMAP.md#v11-candidates) for the actual fix. If you just want to try the CLI
-directly, skip both install paths and clone the repository — every command below runs straight
-from a checkout with `node scripts/<name>.mjs`.
+This trades one limitation for another. Installed commands now work immediately instead of asking
+you for a checkout path — but they are bound to **this specific checkout's location**: move or
+delete it and every command an installed skill documents breaks. It still **never copies `scripts/`**
+anywhere near the installed skill text; only the absolute path to this checkout's own copy of it
+gets substituted in, so `scripts/` itself has to keep existing exactly where it is. If you expect to
+move, rename, or delete this checkout later, use the plugin path instead. If you just want to try
+the CLI directly, skip both install paths and clone the repository — every command below runs
+straight from a checkout with `node scripts/<name>.mjs`.
 
 ## Quick start
 

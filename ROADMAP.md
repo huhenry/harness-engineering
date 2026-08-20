@@ -28,35 +28,6 @@ comments). A shared `MAX_SCORE` constant is the same class of fix, but touches `
 all six scorer files — real, multi-file surface area that was correctly judged out of scope for the
 task that found it (Task 14, which owned `report.mjs` only).
 
-### 3. `install.sh` should substitute the checkout path into installed skill text
-
-**What's wrong:** `install.sh` copies only skill markdown text, never `scripts/`, into whichever
-agent-ecosystem directory it finds. Confirmed by actually running it into a temp directory:
-
-```
-$ sh install.sh
--> .claude/skills
-installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-```
-
-None of the five target ecosystems (`.claude/skills`, `.cursor/skills`, `.codex/skills`,
-`.gemini/skills`, `.agent/skills`) get a `${CLAUDE_PLUGIN_ROOT}`-equivalent variable set, so a
-skill's documented `node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` command cannot resolve after a
-plain `install.sh` run — the installed skill has to ask the user for a checkout path the first time
-it actually needs to run a command. See the [README's Install section](README.md#install) for the
-user-facing version of this limitation.
-
-**Why not fixed in v1:** Flagged during Task 22 as a real, buildable fix — `install.sh` could know
-its own source checkout path (`HARNESS_SRC`/`$(dirname "$0")`, which it already computes) and
-substitute that absolute path into the installed `SKILL.md` text in place of the
-`${CLAUDE_PLUGIN_ROOT}` placeholder — but it is a scope change to `install.sh`'s behavior, which
-this task was explicitly told not to touch, and is exactly the kind of change that needs the
-plugin-vs-non-plugin distribution story thought through deliberately rather than as a side effect
-of a docs task.
-
 ## Beyond v1.1 — larger directions
 
 These come from the project's original design document, which lives outside this repository

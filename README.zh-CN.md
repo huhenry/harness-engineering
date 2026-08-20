@@ -28,34 +28,36 @@ AI-agent harness 在这里应该长什么样——instructions、tools、environ
 
 有两条安装路径，而且**它们不等价**——按你的需求选，别当成两个效果一样的选项。
 
-**Claude Code 插件（推荐，装完即用）。** 把这个仓库加成一个 marketplace 源，安装
-`harness-engineering` 插件（见 `.claude-plugin/marketplace.json`）。Claude Code 会把每个 skill
-自己 markdown 里的 `${CLAUDE_PLUGIN_ROOT}` 替换成插件的真实安装路径，所以每个 `harness-*` skill
-文档里写的命令立刻就能解析——不需要额外配置。
+**Claude Code 插件（推荐，装完即用，checkout 挪了位置也不受影响）。** 把这个仓库加成一个
+marketplace 源，安装 `harness-engineering` 插件（见 `.claude-plugin/marketplace.json`）。Claude
+Code 会把每个 skill 自己 markdown 里的 `${CLAUDE_PLUGIN_ROOT}` 替换成插件的真实安装路径，所以每
+个 `harness-*` skill 文档里写的命令立刻就能解析——不需要额外配置。
 
-**`install.sh`（只装 skill 文本，还差一步）。** 在 checkout 里跑 `./install.sh`，会把 `skills/`
-下的 skill markdown 复制进当前项目里找到的 agent 生态目录（`.claude/skills`、`.cursor/skills`、
-`.codex/skills`、`.gemini/skills`、`.agent/skills`；一个都不存在时默认用 `.claude/skills`）。
-它自己的输出把能做和不能做的事说得很明白：
+**`install.sh`（只装 skill 文本，绑死在这一个 checkout 上）。** 在 checkout 里跑
+`./install.sh`，会把 `skills/` 下的 skill markdown 复制进当前项目里找到的 agent 生态目录
+（`.claude/skills`、`.cursor/skills`、`.codex/skills`、`.gemini/skills`、`.agent/skills`；一个都
+不存在时默认用 `.claude/skills`），并且会把这个 checkout 自己的绝对路径替换进每一份装好的
+`SKILL.md` 里的 `${CLAUDE_PLUGIN_ROOT}`，所以装好的命令也是立刻就能用的。它自己的输出把能做和不
+能做的事说得很明白：
 
 ```
 $ sh install.sh
 -> .claude/skills
 installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-The installed skills will ask you for a harness-engineering checkout
-path the first time a command actually needs to run. For working
-commands out of the box, install this as a Claude Code plugin instead:
+Commands in the installed skills point at this checkout:
+  <checkout>
+Move or delete that directory and the installed skills stop working.
+(scripts/ itself is never copied -- only skill text, with this
+checkout's path substituted in.)
+For a relocatable install, use the Claude Code plugin instead:
   https://github.com/huhenry/harness-engineering
 ```
 
-它**不会复制 `scripts/`**——只装 skill 文本——五个目标目录（包括默认的 `.claude/skills`）没有一个
-会拿到类似 `${CLAUDE_PLUGIN_ROOT}` 的变量。所以 `install.sh` 跑完之后，装好的 skill 没有一条能用
-的路径指向 `scripts/*.mjs`，第一次真要跑命令的时候只能反过来问你 checkout 在哪。这不是"多读几遍
-文档就能绕过去"的小毛病——对这五个非插件生态来说，这是一个真实存在、当前就是这样的限制，对应的真
-正修法记在[路线图](ROADMAP.zh-CN.md#v11-候选)里。如果你只是想直接试试这个 CLI，两条安装路径都
+这是拿一个限制换了另一个限制。装好的命令现在立刻能用，不用再反过来问你 checkout 在哪——但它们
+绑死在**这一个具体 checkout 的位置**上：把这个目录挪走或者删掉，装好的 skill 里文档写的命令就全
+部失效。它依然**不会把 `scripts/` 复制**到装好的 skill 文本旁边——只是把指向这个 checkout 自己那
+份 `scripts/` 的绝对路径替换了进去，所以 `scripts/` 本身必须原地不动地继续存在。如果你以后打算挪
+动、改名或者删掉这个 checkout，改用插件安装路径。如果你只是想直接试试这个 CLI，两条安装路径都
 可以跳过，直接 clone 仓库——下面每条命令都是从 checkout 里用 `node scripts/<name>.mjs` 直接跑的。
 
 ## 快速开始

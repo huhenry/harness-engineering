@@ -24,32 +24,6 @@ v1.1 候选的每一条，在写进这份文档之前都重新对照过当前代
 常量是同一类修复，但要同时改 `report.mjs` 加六个评分器文件，改动面确实不小——当时发现这个问题
 的 Task 14 只负责 `report.mjs` 一个文件，判定不在那次任务范围内是对的。
 
-### 3. `install.sh` 应该把 checkout 的绝对路径替换进已安装的 skill 文本里
-
-**问题在哪：** `install.sh` 只把 skill 的 markdown 文本复制进它找到的那些 agent 生态目录，从来
-不复制 `scripts/`。实测运行确认：
-
-```
-$ sh install.sh
--> .claude/skills
-installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-```
-
-五个目标生态（`.claude/skills`、`.cursor/skills`、`.codex/skills`、`.gemini/skills`、
-`.agent/skills`）没有一个会拿到类似 `${CLAUDE_PLUGIN_ROOT}` 的变量，所以 skill 文档里写的
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` 命令在跑完一次普通的 `install.sh` 之后没法解析
-——装好的 skill 只能在第一次真的要跑命令的时候，反过来问用户"仓库 checkout 在哪"。用户可见的
-版本见 [README 的安装一节](README.zh-CN.md#安装)。
-
-**为什么 v1 没修：** Task 22 时就指出过这是一个确实可以做的真修复——`install.sh` 本来就已经
-算出了自己的源码 checkout 路径（`HARNESS_SRC`/`$(dirname "$0")`），完全可以把这个绝对路径替换
-进已安装的 `SKILL.md` 文本里，顶替 `${CLAUDE_PLUGIN_ROOT}` 占位符——但这属于改变 `install.sh`
-行为的范围变更，而本任务被明确要求不许动 `install.sh`，而且这也正是那种需要专门坐下来想清楚
-"插件形态 vs 非插件形态该怎么分发"的问题，不该是文档任务的副产品。
-
 ## v1.1 之后：更大的方向
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，

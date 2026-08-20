@@ -4,18 +4,16 @@
 # .cursor/skills, .codex/skills, .gemini/skills, .agent/skills); if none of
 # those exist yet, default to creating .claude/skills.
 #
-# Honest limitation:
-# this only copies skill TEXT. It never copies scripts/, and none of the
-# five target ecosystems get a $CLAUDE_PLUGIN_ROOT-equivalent variable set
-# for a script-relative-path scheme to anchor on -- so the harness-* skills'
-# documented `node "$CLAUDE_PLUGIN_ROOT/scripts/*.mjs"` commands cannot
-# resolve after this script runs, for ANY of the five targets, including
-# .claude/skills (a plain skills-directory drop-in is not the same thing as
-# a Claude Code plugin install, and does not get CLAUDE_PLUGIN_ROOT set
-# either). For working commands out of the box, install this as a real
-# Claude Code plugin instead (`.claude-plugin/marketplace.json` in this
-# repo). This script exists for ecosystems that have no plugin mechanism at
-# all, where shipping the skill's guidance text is still better than nothing.
+# This copies skill TEXT only -- it never copies scripts/. What it does do is
+# substitute this checkout's absolute path for ${CLAUDE_PLUGIN_ROOT} in the
+# installed SKILL.md files, so their documented `node ".../scripts/*.mjs"`
+# commands resolve immediately instead of asking the user for a path.
+#
+# The consequence, stated plainly: the installed skills are bound to THIS
+# checkout's location. Move or delete it and they break. For a relocatable
+# install, use the Claude Code plugin (.claude-plugin/marketplace.json in
+# this repo). This script exists for ecosystems that have no plugin
+# mechanism at all.
 set -eu
 
 SRC="${HARNESS_SRC:-$(cd "$(dirname "$0")" && pwd)}"
@@ -28,22 +26,40 @@ for d in .claude/skills .cursor/skills .codex/skills .gemini/skills .agent/skill
 done
 [ -z "$TARGETS" ] && TARGETS=".claude/skills"
 
+# sed's replacement text gives & and \ special meaning, and | is the
+# delimiter chosen below (a path can contain neither | nor a newline in
+# practice, but & is entirely possible). Escape all three once, up front.
+ESC_SRC=$(printf '%s' "$SRC" | sed 's/[&|\\]/\\&/g')
+
 for t in $TARGETS; do
   echo "-> $t"
   [ "$DRY_RUN" = "1" ] && continue
   mkdir -p "$t"
   cp -R "$SRC"/skills/. "$t"/
+  # Substitute this checkout's absolute path for ${CLAUDE_PLUGIN_ROOT} in the
+  # INSTALLED copy only (never in "$SRC"/skills, which keeps the placeholder
+  # form for the real plugin install path). None of the five target
+  # ecosystems set a $CLAUDE_PLUGIN_ROOT-equivalent variable, so without this
+  # the installed skills' documented commands cannot resolve.
+  #
+  # `sed > tmp && mv` rather than `sed -i`: -i needs a suffix argument on BSD
+  # sed and rejects one attached differently on some GNU builds, and this
+  # script is tested under dash for POSIX compliance.
+  for f in "$t"/*/SKILL.md; do
+    [ -f "$f" ] || continue
+    sed "s|\${CLAUDE_PLUGIN_ROOT}|$ESC_SRC|g" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  done
 done
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "dry run: nothing written"
 else
   echo "installed harness-engineering skills"
-  echo "NOTE: this installs skill text only. scripts/ was NOT copied, and none"
-  echo "of these target directories give the harness-* skills a working path"
-  echo "to it (no \$CLAUDE_PLUGIN_ROOT-equivalent variable is set here)."
-  echo "The installed skills will ask you for a harness-engineering checkout"
-  echo "path the first time a command actually needs to run. For working"
-  echo "commands out of the box, install this as a Claude Code plugin instead:"
+  echo "Commands in the installed skills point at this checkout:"
+  echo "  $SRC"
+  echo "Move or delete that directory and the installed skills stop working."
+  echo "(scripts/ itself is never copied -- only skill text, with this"
+  echo "checkout's path substituted in.)"
+  echo "For a relocatable install, use the Claude Code plugin instead:"
   echo "  https://github.com/huhenry/harness-engineering"
 fi

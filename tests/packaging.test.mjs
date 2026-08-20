@@ -244,3 +244,65 @@ test('install.sh targets ship skill text only -- no scripts/ is resolvable, and 
   assert.match(output, /script/i, 'install.sh output must mention the scripts/ gap in its own words');
   assert.match(output, /(checkout|github\.com\/huhenry\/harness-engineering)/i, 'install.sh output must point at where to get a working checkout');
 });
+
+// install.sh copies skill TEXT only, and none of the five target
+// ecosystems set a $CLAUDE_PLUGIN_ROOT-equivalent variable — so the skills'
+// documented `node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` commands could not
+// resolve after a plain install, and the skill had to ask the user for a
+// checkout path the first time it needed one. install.sh already knows its
+// own source path; it now substitutes it.
+test('install.sh substitutes the checkout path into installed skill text', () => {
+  const dst = tempDir('harness-install-subst-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    assert.ok(
+      !text.includes('${CLAUDE_PLUGIN_ROOT}'),
+      `${skill}/SKILL.md still carries an unsubstituted \${CLAUDE_PLUGIN_ROOT}`,
+    );
+  }
+});
+
+test('the substituted command actually runs', () => {
+  const dst = tempDir('harness-install-runs-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  const text = readFileSync(join(dst, '.claude', 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  // Pull the first `node "<path>/scripts/assess.mjs"` occurrence back out of
+  // the installed text and run it for real — the whole point of this fix is
+  // that the path in the installed skill resolves, and only executing it
+  // proves that.
+  const m = text.match(/node "([^"]*\/scripts\/assess\.mjs)"/);
+  assert.ok(m, 'installed harness-assess SKILL.md must contain a runnable assess command');
+  // assess.mjs legitimately exits 1 whenever a repo has any high-severity gap
+  // and no --min-level is given (its own documented exit-code contract), and
+  // fixtures/bad-repo -- a deliberate 0/24 fixture -- has several. execFileSync
+  // throws on a non-zero exit by default, so asserting on its return value
+  // would fail here regardless of whether the path substitution works.
+  // spawnSync plus an explicit status check runs the identical command
+  // without that false failure, and also pins down the real, correct exit
+  // code as part of proving the command runs.
+  const result = spawnSync('node', [m[1], join(ROOT, 'fixtures', 'bad-repo'), '--json'], { encoding: 'utf8' });
+  assert.equal(result.status, 1, `assess.mjs should exit 1 for bad-repo's high-severity gaps (stderr: ${result.stderr})`);
+  assert.equal(JSON.parse(result.stdout).level.id, 0);
+});
+
+test('the source checkout is not mutated by installing', () => {
+  const before = readFileSync(join(ROOT, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  const dst = tempDir('harness-install-nomutate-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  const after = readFileSync(join(ROOT, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  assert.equal(after, before, 'install.sh must never rewrite its own source skills/');
+  assert.ok(before.includes('${CLAUDE_PLUGIN_ROOT}'), 'the source keeps the placeholder form');
+});
+
+test('a checkout path containing shell-special characters survives substitution', () => {
+  // sed's replacement text treats & and \ specially and the delimiter must
+  // not appear unescaped. A real path can legitimately contain '&'.
+  const weird = tempDir('harness-src-a&b-');
+  cpSync(join(ROOT, 'skills'), join(weird, 'skills'), { recursive: true });
+  cpSync(join(ROOT, 'install.sh'), join(weird, 'install.sh'));
+  const dst = tempDir('harness-install-weird-');
+  execFileSync('sh', [join(weird, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: weird } });
+  const text = readFileSync(join(dst, '.claude', 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  assert.ok(text.includes(`${weird}/scripts/assess.mjs`), 'the literal path must land intact');
+});
