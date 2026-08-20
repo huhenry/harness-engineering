@@ -374,18 +374,31 @@ test('C (dogfood): scaffold --apply on bad-repo, then this project\'s own assess
 
     // Condition 2 (brief C): the score must measurably improve -- a
     // "fills gaps in" tool that leaves the score untouched is not doing its
-    // job. Concrete numbers (see task-20-report.md's dogfood section):
-    // bad-repo goes from 0/24 to 13/24, with tools/state/loop maxed at 4/4
-    // each and instructions/feedback/environment still shy of full marks.
+    // job. Concrete numbers were 0/24 -> 13/24 with tools/state/loop maxed
+    // at 4/4 each before Task 1 (v1.1 hardening) landed; they moved to
+    // 0/24 -> 12/24 with state at 3/4 once ROADMAP#4's fix (placeholder.mjs)
+    // shipped, because scaffold's own session-handoff.md/
+    // clean-state-checklist.md are copied verbatim from templates/ --
+    // session-handoff.md still carries an unreplaced FILL: marker and
+    // clean-state-checklist.md is byte-identical to its template, so
+    // isFilledArtifact correctly refuses to count either one until a human
+    // actually fills them in. This is the fix working as intended, not a
+    // regression: re-derived directly against the current code (not just
+    // adjusted to make the test pass) -- see task-1-report.md's fix-round-1
+    // section for the exact command used to confirm 12/24 and state:3.
+    // tools/loop are still fully addressed by scaffold (neither one gained a
+    // placeholder-detection check); only state's handoff rung changed.
     const after = runAssess({ repoPath: repo, lang, now });
     assert.ok(
       after.score.total > before.score.total,
       `${lang}: expected score to increase, got ${before.score.total} -> ${after.score.total}`,
     );
-    assert.equal(after.score.total, 13, `${lang}: expected the known concrete after-score of 13/24, got ${after.score.total}`);
+    assert.equal(after.score.total, 12, `${lang}: expected the known concrete after-score of 12/24, got ${after.score.total}`);
     const byId = Object.fromEntries(after.subsystems.map((s) => [s.id, s.score]));
     assert.equal(byId.tools, 4, `${lang}: tools should be fully addressed by scaffold`);
-    assert.equal(byId.state, 4, `${lang}: state should be fully addressed by scaffold`);
+    // Not 4: scaffold's own session-handoff.md/clean-state-checklist.md are
+    // unfilled placeholders until a human edits them (see comment above).
+    assert.equal(byId.state, 3, `${lang}: state stays at 3 until the scaffolded handoff docs are actually filled in`);
     assert.equal(byId.loop, 4, `${lang}: loop should be fully addressed by scaffold`);
 
     // Condition 3 (brief C): whatever gaps remain must be gaps only the
@@ -402,7 +415,15 @@ test('C (dogfood): scaffold --apply on bad-repo, then this project\'s own assess
     for (const id of mustNotAppear) {
       assert.ok(!remaining.includes(id), `${lang}: unexpected self-inflicted gap "${id}" (remaining: ${remaining.join(', ')})`);
     }
-    const mustAppear = ['instructions.no-stack-versions', 'feedback.no-declared-commands', 'feedback.no-tests'];
+    // state.handoff-unfilled belongs here, not in mustNotAppear above: it is
+    // an honest report that scaffold wrote a placeholder the repo owner has
+    // not yet filled in, not a bug in scaffold's own output (mustNotAppear
+    // above already covers the "file is missing" gap -- state.no-handoff --
+    // which correctly never fires here, since the file genuinely exists).
+    const mustAppear = [
+      'instructions.no-stack-versions', 'feedback.no-declared-commands', 'feedback.no-tests',
+      'state.handoff-unfilled',
+    ];
     for (const id of mustAppear) {
       assert.ok(remaining.includes(id), `${lang}: expected honest gap "${id}" to remain -- only the repo owner can supply this`);
     }
