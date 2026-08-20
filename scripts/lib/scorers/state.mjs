@@ -38,24 +38,40 @@ export function validateFeatureList(data) {
 }
 
 /**
- * True when a *filled-in* `name` exists at the repo root or at any depth
- * beneath it.
+ * Classify a handoff artefact's presence at the repo root or at any depth
+ * beneath it, as one of:
  *
- * The any-depth search is deliberate and unchanged — a repository keeping
- * its handoff doc at docs/session-handoff.md should get credit for it. What
- * changed (ROADMAP#4) is that an unfilled template no longer counts: a repo
- * that merely vendors this project's templates/, or has a templates/
- * directory of its own containing a file with one of these names, used to
- * pass state.no-handoff without ever writing a real handoff document.
+ *   - 'absent'   -- no file named `name` exists anywhere in the repository.
+ *   - 'unfilled' -- at least one copy exists, but every copy is still a
+ *                   placeholder (an unreplaced `FILL:` marker, or
+ *                   byte-identical to one of this project's shipped
+ *                   templates -- see placeholder.mjs's isFilledArtifact).
+ *   - 'filled'   -- at least one copy exists and is a real, filled-in
+ *                   artefact.
  *
- * The root `ctx.exists` branch is kept ahead of the glob for the same reason
- * it was there before: `ctx.list` respects the config's ignore patterns and
- * `ctx.exists` does not, so a root-level artefact inside an ignored path
- * still counts.
+ * The any-depth search is deliberate and unchanged from before ROADMAP#4's
+ * fix — a repository keeping its handoff doc at docs/session-handoff.md
+ * should get credit for it. A repository can have BOTH a leftover
+ * vendored/unfilled copy (e.g. under templates/) AND its own real,
+ * filled-in copy elsewhere; that combination classifies as 'filled', since
+ * every candidate path is checked rather than stopping at the first one
+ * found — this preserves exactly what the old boolean `hasHandoff`/
+ * `hasChecklist` computed (see git history) before this function split that
+ * boolean into three states so 'absent' and 'unfilled' can be told apart.
+ *
+ * The root `ctx.exists` check feeds the same candidate set the glob does,
+ * for the same reason it always has: `ctx.list` respects the config's
+ * ignore patterns and `ctx.exists` does not, so a root-level artefact
+ * inside an ignored path is still a candidate.
  */
-function filledExistsAnyDepth(ctx, name) {
-  if (ctx.exists(name) && isFilledArtifact(ctx, name)) return true;
-  return ctx.list([`**/${name}`]).some((rel) => isFilledArtifact(ctx, rel));
+function classifyHandoffArtefact(ctx, name) {
+  const candidates = new Set(ctx.list([`**/${name}`]));
+  if (ctx.exists(name)) candidates.add(name);
+  if (candidates.size === 0) return 'absent';
+  for (const rel of candidates) {
+    if (isFilledArtifact(ctx, rel)) return 'filled';
+  }
+  return 'unfilled';
 }
 
 export function score({ ctx, now }) {
@@ -80,8 +96,18 @@ export function score({ ctx, now }) {
   const featureListData = hasFeatureListFile ? ctx.readJson('feature_list.json') : null;
   const featureListValid = hasFeatureListFile && validateFeatureList(featureListData).length === 0;
 
-  const hasHandoff = filledExistsAnyDepth(ctx, 'session-handoff.md');
-  const hasChecklist = filledExistsAnyDepth(ctx, 'clean-state-checklist.md');
+  const handoffState = classifyHandoffArtefact(ctx, 'session-handoff.md');
+  const checklistState = classifyHandoffArtefact(ctx, 'clean-state-checklist.md');
+  const hasHandoff = handoffState === 'filled';
+  const hasChecklist = checklistState === 'filled';
+  // state.no-handoff fires when either artefact is missing outright;
+  // state.handoff-unfilled fires when every existing copy of either
+  // artefact is still a placeholder. A repository can trip both at once
+  // (one artefact absent, the other present-but-unfilled) -- that is an
+  // accurate report of two distinct problems, not a bug, so the two checks
+  // below are independent rather than one superseding the other.
+  const anyHandoffAbsent = handoffState === 'absent' || checklistState === 'absent';
+  const anyHandoffUnfilled = handoffState === 'unfilled' || checklistState === 'unfilled';
   // Only AGENTS.md is checked here (not CLAUDE.md as instructions/tools do)
   // — the table names AGENTS.md specifically for the session-lifecycle
   // check. This is a plain full-text search over the raw body, not a
@@ -102,7 +128,8 @@ export function score({ ctx, now }) {
       { ok: !hasFeatureListFile || featureListValid, gapId: 'state.feature-list-invalid' },
     ] },
     { score: 4, checks: [
-      { ok: hasHandoff && hasChecklist, gapId: 'state.no-handoff' },
+      { ok: !anyHandoffAbsent, gapId: 'state.no-handoff' },
+      { ok: !anyHandoffUnfilled, gapId: 'state.handoff-unfilled' },
       { ok: lifecycleDocumented, gapId: 'state.lifecycle-undocumented' },
     ] },
   ]);

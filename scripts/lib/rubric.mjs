@@ -40,6 +40,13 @@ export const GAPS = [
   def('state.no-feature-list', 'medium', 1, ['feature_list.json', 'feature_list.schema.json']),
   def('state.feature-list-invalid', 'high', 2),
   def('state.no-handoff', 'low', 1, ['session-handoff.md', 'clean-state-checklist.md']),
+  // No templates: unlike state.no-handoff, scaffold cannot fix this one.
+  // The file already exists -- scaffold never overwrites an existing file,
+  // so re-running it would only ever produce a `.harness-proposed` sibling
+  // next to a handoff doc that is still unfilled. The actual fix is for a
+  // human to replace the FILL: placeholders with what really happened, not
+  // to scaffold again.
+  def('state.handoff-unfilled', 'low', 1),
   def('state.lifecycle-undocumented', 'medium', 2),
   // feedback
   def('feedback.no-tests', 'high', 3),

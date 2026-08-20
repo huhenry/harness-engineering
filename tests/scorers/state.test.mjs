@@ -136,6 +136,10 @@ test('scores 3 when feature_list.json is valid but handoff files are missing', (
   const r = score(input({ files, mtimes: { 'PROGRESS.md': FRESH } }));
   assert.equal(r.score, 3);
   assert.ok(r.gapIds.includes('state.no-handoff'));
+  // Both artefacts are genuinely absent here, not present-but-unfilled -- so
+  // this must report only state.no-handoff, never state.handoff-unfilled
+  // (Finding 3: the two ids are for two different facts about the file).
+  assert.ok(!r.gapIds.includes('state.handoff-unfilled'));
 });
 
 test('scores 3 when handoff files exist but AGENTS.md does not document session lifecycle', () => {
@@ -323,7 +327,12 @@ function rungThreeFiles(extra = {}) {
 
 // ROADMAP#4: a repository that merely vendors this project's templates must
 // not pass state.no-handoff without ever writing a real handoff document.
-test('vendored, unedited templates do not satisfy the handoff rung', () => {
+// Finding 3 (fix round 1): both artefacts here EXIST -- they are just
+// unfilled -- so classifyHandoffArtefact reports 'unfilled', not 'absent',
+// and the ladder must fire state.handoff-unfilled, not state.no-handoff.
+// Reporting "no session handoff doc" when the file is sitting right there
+// would be exactly the kind of lying report this project exists to prevent.
+test('vendored, unedited templates report handoff-unfilled, not no-handoff', () => {
   const r = score(input({
     files: rungThreeFiles({
       'templates/en/session-handoff.md': readShipped('session-handoff.md'),
@@ -332,7 +341,8 @@ test('vendored, unedited templates do not satisfy the handoff rung', () => {
     gitLastCommits: { 'PROGRESS.md': FRESH },
   }));
   assert.equal(r.score, 3);
-  assert.ok(r.gapIds.includes('state.no-handoff'));
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
 });
 
 test('real, filled-in handoff artefacts still satisfy the handoff rung', () => {
@@ -345,6 +355,7 @@ test('real, filled-in handoff artefacts still satisfy the handoff rung', () => {
   }));
   assert.equal(r.score, 4);
   assert.ok(!r.gapIds.includes('state.no-handoff'));
+  assert.ok(!r.gapIds.includes('state.handoff-unfilled'));
 });
 
 // The any-depth search itself is deliberate and stays: a repo that keeps its
@@ -360,8 +371,10 @@ test('a filled handoff at any depth still counts', () => {
   assert.equal(r.score, 4);
 });
 
-// Mixed case: a real handoff plus a vendored checklist is still incomplete.
-test('one real artefact plus one vendored template does not satisfy the rung', () => {
+// Mixed case: a real handoff plus a vendored checklist is still incomplete
+// -- but the checklist file DOES exist (just unfilled), so this is
+// state.handoff-unfilled, not state.no-handoff (Finding 3).
+test('one real artefact plus one vendored template reports handoff-unfilled, not no-handoff', () => {
   const r = score(input({
     files: rungThreeFiles({
       'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
@@ -370,5 +383,22 @@ test('one real artefact plus one vendored template does not satisfy the rung', (
     gitLastCommits: { 'PROGRESS.md': FRESH },
   }));
   assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
+});
+
+// Both ids can fire together when they describe two different true facts:
+// one artefact is missing outright, the other exists but was never filled
+// in. Neither id supersedes the other (Finding 3).
+test('one absent artefact plus one unfilled artefact reports both gap ids', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      // session-handoff.md intentionally absent.
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
   assert.ok(r.gapIds.includes('state.no-handoff'));
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
 });
