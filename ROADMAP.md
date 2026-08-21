@@ -27,6 +27,18 @@ design document.
   `instructions.unfilled-template` is the natural first step, and it is its own task: a new gap id,
   bilingual copy, a `references/rubric.md` row in both languages, and a new fixture.
 
+- **`scaffold` can close the Loop entry-point rung with an unfilled placeholder.** A specific,
+  measured instance of the item above, recorded separately because it is a rung `scaffold` closes
+  rather than one a user vendors. `loop.no-entrypoint` deliberately carries no templates, but that
+  does not keep `scaffold` away from the rung: `loop.no-maker-checker` writes
+  `loop/maker-checker-loop.md`, and the mere existence of a file under `loop/` satisfies rung 2's
+  entry-point check. Measured on a repository whose `AGENTS.md` mentions an autonomous loop and
+  nothing else — `Loop 1/4` before `scaffold --apply`, **`Loop 2/4` after**, with the file that
+  bought the rung still carrying an unreplaced `FILL:` marker. Nothing about that repository
+  actually runs a loop. Fixing it properly means the entry-point check learning the difference
+  between a document that declares where a loop lives and a trigger that starts one — the same
+  "what does *exists* mean" change as the item above, not a special case.
+
 ## Beyond v1.1 — larger directions
 
 These come from the project's original design document, which lives outside this repository

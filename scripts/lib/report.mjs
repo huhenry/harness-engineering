@@ -173,14 +173,46 @@ function renderSubsystemTable(report, lang) {
  * ROI, since one subsystem's low-ROI gap would land ahead of the next
  * subsystem's high-ROI gap. Flatten first, then sort once, globally.
  */
+/**
+ * One line naming the high-severity gaps this report is hiding, or nothing
+ * at all.
+ *
+ * Suppression has no severity dimension — a `low` precondition can silence a
+ * `high` gap, and `loop.none` (low) silencing `loop.no-stop-condition` and
+ * `loop.no-budget-cap` (both high) is a live, ordinary case. That produced a
+ * report with no high-severity findings printed beside an exit code of 1,
+ * which README defines as "high-severity gaps found". The exit code is
+ * right; what was missing was the report admitting it had left something
+ * out.
+ *
+ * Returns [] — not an empty string — when there is nothing to say, so a
+ * report without suppressed high-severity gaps is byte-identical to what it
+ * was before this existed. Suppressed gaps below `high` stay silent
+ * deliberately: they are the noise this mechanism was built to remove.
+ */
+function suppressedHighNote(report, lang) {
+  const hidden = allGaps(report).filter((g) => g.suppressedBy !== null && g.severity === 'high');
+  if (hidden.length === 0) return [];
+  const titleOf = new Map(allGaps(report).map((g) => [g.id, g.title]));
+  // Several different preconditions can be hiding high-severity gaps in one
+  // report (loop.none and feedback.no-declared-commands routinely do), so
+  // every distinct one is named. Deduped in ROI order, so the sentence is
+  // deterministic and leads with the one worth fixing first.
+  const implied = [...new Set(hidden.map((g) => g.suppressedBy))].map((id) => titleOf.get(id) ?? id);
+  return [t('report.suppressedHigh', lang, { count: hidden.length, titles: implied.join(', ') }), ''];
+}
+
 function renderGapList(report, lang) {
   const lines = [`## ${t('report.gapsHeading', lang)}`, ''];
   // The one place suppression is allowed to take effect.
   const shown = visibleGaps(report);
   if (shown.length === 0) {
+    // Unreachable with a non-empty hidden set: a precondition gap is never
+    // suppressed by itself, so anything hidden implies something shown.
     lines.push(t('report.noGaps', lang), '');
     return lines;
   }
+  lines.push(...suppressedHighNote(report, lang));
   for (const gap of shown) {
     const subsystemName = t(`subsystem.${gap.subsystemId}`, lang);
     lines.push(`### ${subsystemName} · ${gap.title} (ROI ${gap.roi})`, '');

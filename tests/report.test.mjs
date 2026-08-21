@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { buildReport, renderMarkdown, SCHEMA_VERSION, allGaps, visibleGaps } from '../scripts/lib/report.mjs';
+import { MESSAGES } from '../scripts/lib/i18n.mjs';
+import { gapById } from '../scripts/lib/rubric.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -292,6 +294,78 @@ test('the rendered markdown no longer shows both progress gaps at once', () => {
   const md = renderMarkdown(report, 'en');
   assert.ok(md.includes('No progress file'));
   assert.ok(!/Progress file is stale/.test(md));
+});
+
+/** A results object with every subsystem at 0 and gaps only where named. */
+function resultsWith(perSubsystem) {
+  const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  const out = {
+    instructions: empty, tools: empty, environment: empty, state: empty, feedback: empty, loop: empty,
+  };
+  for (const [id, gapIds] of Object.entries(perSubsystem)) {
+    const gapVars = Object.fromEntries(
+      gapIds.filter((g) => g in HANDOFF_GAP_VARS).map((g) => [g, HANDOFF_GAP_VARS[g]]),
+    );
+    out[id] = { score: 0, cappedByEvidence: false, evidence: [], gapIds, gapVars };
+  }
+  return out;
+}
+
+// Suppression has no severity dimension: `loop.none` is `low` and it hides
+// `loop.no-stop-condition` and `loop.no-budget-cap`, both `high`. That is an
+// ordinary state (fixtures/good-repo reaches it), and it produced a report
+// printing no high-severity findings beside an exit code of 1, which README
+// defines as "high-severity gaps found". Asserted on the RENDERED text,
+// because the contradiction only exists in what a human reads.
+test('the report says how many high-severity gaps it is hiding, and what implies them', () => {
+  for (const lang of ['en', 'zh']) {
+    const md = renderMarkdown(buildReport({
+      ...REPORT_ARGS,
+      lang,
+      results: resultsWith({ loop: ['loop.none', 'loop.no-stop-condition', 'loop.no-budget-cap'] }),
+    }), lang);
+    assert.match(md, /\b2\b/, `${lang}: the count of hidden high-severity gaps must appear`);
+    const impliedBy = MESSAGES[lang]['gap.loop.none.title'];
+    assert.ok(md.includes(impliedBy), `${lang}: the note must name the gap that implies them (${impliedBy})`);
+    // The hidden gaps themselves stay out of the list.
+    assert.ok(!md.includes(MESSAGES[lang]['gap.loop.no-stop-condition.title']),
+      `${lang}: a suppressed gap must still not be listed individually`);
+  }
+});
+
+test('every precondition hiding a high-severity gap is named, not just the first', () => {
+  const md = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({
+      state: ['state.no-progress', 'state.progress-stale'],
+      loop: ['loop.none', 'loop.no-budget-cap'],
+    }),
+  }), 'en');
+  assert.ok(md.includes(MESSAGES.en['gap.state.no-progress.title']));
+  assert.ok(md.includes(MESSAGES.en['gap.loop.none.title']));
+  assert.match(md, /not shown: 2\./, 'both hidden high-severity gaps must be counted');
+});
+
+// The two silent cases. A stray blank line under the heading would be a
+// visible regression in every report that has nothing to disclose, which is
+// most of them — including this repository's own self-assessment.
+test('nothing is emitted when no high-severity gap is hidden', () => {
+  const noneHidden = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({ loop: ['loop.no-budget-cap'] }),
+  }), 'en');
+  assert.ok(noneHidden.includes('## Gaps by ROI\n\n### '),
+    `the heading must be followed straight by the first gap, got:\n${noneHidden}`);
+
+  // Suppressed but NOT high-severity: genuine noise, and it stays silent.
+  const onlyLowHidden = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({ state: ['state.no-progress', 'state.progress-incomplete'] }),
+  }), 'en');
+  assert.equal(gapById('state.progress-incomplete').severity, 'medium',
+    'sanity: this test only means anything while the suppressed gap is below high');
+  assert.ok(onlyLowHidden.includes('## Gaps by ROI\n\n### '),
+    `a suppressed medium-severity gap must not produce a note, got:\n${onlyLowHidden}`);
 });
 
 // Fix round 1, Finding 1: state.no-handoff and state.handoff-unfilled are

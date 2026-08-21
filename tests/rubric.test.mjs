@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SUBSYSTEMS, GAPS, MAX_SCORE, gapById, gapsFor } from '../scripts/lib/rubric.mjs';
 import { MESSAGES } from '../scripts/lib/i18n.mjs';
+import { TEMPLATE_WHITELIST } from '../scripts/lib/templates.mjs';
 
 test('subsystem order is fixed', () => {
   assert.deepEqual(SUBSYSTEMS, ['instructions', 'tools', 'environment', 'state', 'feedback', 'loop']);
@@ -64,33 +65,33 @@ test('every presupposedBy names a real gap in the SAME subsystem', () => {
   }
 });
 
-// An earlier version of this file asserted the opposite invariant -- that a
-// suppressed gap must scaffold nothing its precondition does not -- because
-// scaffold.mjs really did read the filtered gap list, so suppression could
-// silently stop a file being written. That was a bug in scaffold, and it is
-// fixed: both behavioural consumers now go through report.mjs's `allGaps`,
-// which never filters (pinned by tests/report.test.mjs's source check).
+// This replaced an earlier invariant (a suppressed gap must scaffold nothing
+// its precondition does not) that only existed because scaffold.mjs read the
+// filtered gap list. That was a bug in scaffold, it is fixed, and both
+// behavioural consumers now go through report.mjs's `allGaps`.
 //
-// The invariant worth keeping is the one that no longer depends on any
-// consumer behaving: a suppressed gap must not be the only claimant of a
-// template, because a claimant that is never reported still has to be
-// scaffoldable for the file to get written. This is now a statement about
-// the table alone, and it deliberately PERMITS loop.no-maker-checker ->
-// loop.none, which the old rule forbade: the id is suppressed in the report
-// and still scaffolds evaluator-rubric.md, which is exactly right.
-test('every template has at least one claimant, suppressed or not', () => {
-  const claimed = new Map();
-  for (const g of GAPS) {
-    for (const tpl of g.templates) {
-      if (!claimed.has(tpl)) claimed.set(tpl, []);
-      claimed.get(tpl).push(g.id);
-    }
-  }
-  for (const [tpl, claimants] of claimed) {
-    assert.ok(claimants.length > 0, `${tpl} has no claimant gap`);
+// The first replacement was worthless: it built its list of templates BY
+// iterating `g.templates`, so it only ever examined templates that already
+// had a claimant, and `scaffoldable` is DEFINED as `templates.length > 0` --
+// every branch was true by construction. Proved by mutation: deleting
+// `evaluator-rubric.md` from loop.no-maker-checker leaves that file shipped
+// and unreachable by scaffold, and the test still passed. Only an unrelated
+// e2e test that happens to hardcode the filename noticed.
+//
+// Walking TEMPLATE_WHITELIST inverts the question into one the rubric table
+// cannot make vacuous: is every template this project SHIPS reachable by
+// some gap scaffold can act on? Re-run against the same mutation, this
+// version fails.
+test('every shipped template is reachable — some scaffoldable gap claims it', () => {
+  for (const tpl of TEMPLATE_WHITELIST) {
+    const claimants = GAPS.filter((g) => g.templates.includes(tpl));
     assert.ok(
-      claimants.some((id) => GAPS.find((g) => g.id === id).scaffoldable),
-      `${tpl}'s only claimants are non-scaffoldable: ${claimants.join(', ')}`,
+      claimants.length > 0,
+      `${tpl} is shipped in templates/ but no gap claims it — scaffold can never write it`,
+    );
+    assert.ok(
+      claimants.some((g) => g.scaffoldable),
+      `${tpl}'s only claimants are non-scaffoldable: ${claimants.map((g) => g.id).join(', ')}`,
     );
   }
 });

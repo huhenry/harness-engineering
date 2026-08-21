@@ -105,11 +105,15 @@ export const GAPS = [
   def('state.feature-list-invalid', 'high', 2),
   def('state.no-handoff', 'low', 1, ['session-handoff.md', 'clean-state-checklist.md']),
   // No templates: unlike state.no-handoff, scaffold cannot fix this one.
-  // The file already exists -- scaffold never overwrites an existing file,
-  // so re-running it would only ever produce a `.harness-proposed` sibling
-  // next to a handoff doc that is still unfilled. The actual fix is for a
-  // human to replace the FILL: placeholders with what really happened, not
-  // to scaffold again.
+  // Scaffold only ever writes NEW files and never edits one that exists, so
+  // whichever branch it takes leaves the unfilled document unfilled: if the
+  // root path is already occupied it writes a `.harness-proposed` sibling,
+  // and if the only copy is below the root (docs/session-handoff.md) it
+  // creates a fresh template at the root and does not touch the real file
+  // at all. An earlier version of this comment named only the first branch,
+  // and the shipped fix text repeated that claim until it was retracted.
+  // The actual fix is for a human to replace the FILL: placeholders with
+  // what really happened.
   //
   // No `presupposedBy: 'state.no-handoff'` either, even though the two can
   // fire together (state.mjs's own comment above `anyHandoffAbsent`/
@@ -160,12 +164,25 @@ export const GAPS = [
   // no stop condition and no budget cap. Splitting the id is what lets the
   // three high-severity properties below attach to rung 1 alone.
   def('loop.none', 'low', 1, ['loop/goal-loop.md', 'loop/timer-loop.md', 'loop/maker-checker-loop.md']),
-  // Not scaffoldable, deliberately. `loop/*.md` is one of the three things
-  // that satisfies rung 2, so writing those templates here WOULD close this
-  // gap -- which is exactly the objection: this repository has already shown
-  // it knows what a loop is, and handing it three unfilled pattern primers
-  // would buy it a rung for files nobody has read rather than for anything
-  // that runs. The fix text names the three real entry points instead.
+  // Carries no templates of its own: this project ships nothing that would
+  // honestly close it, since the only rung-2 signal that actually executes
+  // anything is a scheduled workflow and there is no template for one.
+  //
+  // That is NOT the same as scaffold leaving this gap alone, and an earlier
+  // version of this comment claimed it was. Measured: a repository at Loop
+  // 1/4 (loop keyword present, no entry point, no maker-checker) gets
+  // `loop/maker-checker-loop.md` written by loop.no-maker-checker below,
+  // which satisfies rung 2's `hasLoopDir` and takes Loop to 2/4 -- on a
+  // primer that still carries an unreplaced FILL: marker. Giving THIS id
+  // templates would add a second route to that outcome; withholding them
+  // does not remove the first. The outcome itself is an instance of the
+  // "an unfilled template counts as content" hole recorded in the roadmap's
+  // still-open register, deliberately not fixed here.
+  //
+  // Severity `low` because the same repository state already earns `low`
+  // from loop.none one rung down: an unwired loop is the same "you do not
+  // have a working loop yet" fact, one rung further along, not a new hazard.
+  // Effort 2 because wiring a trigger is more than dropping in a document.
   def('loop.no-entrypoint', 'low', 2, [], 'loop.none'),
   // Every one of these describes a property OF the loop — its stop
   // condition, its budget, its reviewer role, its rollback path. "No agentic
@@ -177,7 +194,7 @@ export const GAPS = [
   def('loop.no-stop-condition', 'high', 2, [], 'loop.none'),
   def('loop.no-budget-cap', 'high', 2, [], 'loop.none'),
   // Scaffoldable AND suppressed, which is only coherent because scaffold
-  // reads the unsuppressed list: a repo with no loop at all still gets
+  // reads the unfiltered list: a repo with no loop at all still gets
   // evaluator-rubric.md offered, it just is not told twice in the same
   // report that its nonexistent loop has no reviewer step.
   def('loop.no-maker-checker', 'medium', 2, ['evaluator-rubric.md', 'loop/maker-checker-loop.md'], 'loop.none'),
