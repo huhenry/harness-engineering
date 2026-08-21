@@ -39,6 +39,40 @@ design document.
   between a document that declares where a loop lives and a trigger that starts one — the same
   "what does *exists* mean" change as the item above, not a special case.
 
+- **Suppression has no severity dimension.** `presupposedBy` (`scripts/lib/rubric.mjs`) lets a
+  `low`-severity gap suppress `high`-severity ones, and it is not hypothetical: `loop.none` (low)
+  suppresses both `loop.no-stop-condition` and `loop.no-budget-cap` (high) today, verified directly
+  by running `assess` against `fixtures/bad-repo`. v1.1 shipped a disclosure rather than a cure —
+  `suppressedHighNote` (`scripts/lib/report.mjs`) now prints how many high-severity gaps a report is
+  hiding and names every gap that implies them, so a report with an exit code of 1 and no visible
+  high-severity finding no longer reads as a contradiction. The cure was not taken because the
+  obvious one makes things worse: never letting a gap suppress one of higher severity would
+  un-suppress `loop.no-stop-condition` and `loop.no-budget-cap` beside `loop.none` again on that
+  same fixture, reintroducing the exact "a gap presupposes an artefact another gap just said does
+  not exist" contradiction this milestone's suppression mechanism exists to remove. If a severity
+  rule is ever added to `presupposedBy`, the disclosure line should be revisited rather than left
+  standing beside it — they are alternative treatments of the same fact, not a pair that both belong
+  in the shipped report.
+
+- **`loop.no-entrypoint` has no permanent fixture.** The gap id v1.1 added for a loop that is
+  described in prose but never wired to anything that runs it (`scripts/lib/scorers/loop.mjs`'s
+  rung 2) is exercised only by unit tests in `tests/scorers/loop.test.mjs` that build the repository
+  in memory, one `files: {...}` object at a time. None of the three committed fixtures reach that
+  state — verified by reading `fixtures/good-repo`, `fixtures/mid-repo` and `fixtures/bad-repo`
+  directly, none of their doc files (`AGENTS.md`/`CLAUDE.md`/`README.md`) contain a loop keyword at
+  all, so none of them even clear rung 1, let alone land on rung 2 with no entry point. Both
+  reproductions used while developing the fix (`3709854`) were hand-built temp-directory repos, torn
+  down at the end of the run, never committed. A fifth fixture — an `AGENTS.md` describing an
+  autonomous loop with no `loop/` directory, no scheduled workflow, and no `harness.config.json`
+  `loop` field — would make the `loop.none` / `loop.no-entrypoint` split regression-proof the same
+  way the other three fixtures already cover the rest of the ladder.
+
+- **`suppressedHighNote` calls `allGaps` twice per render.** `scripts/lib/report.mjs`'s
+  `suppressedHighNote` calls `allGaps(report)` once to filter for hidden high-severity gaps and a
+  second time to build the id-to-title map used to name them in the disclosure line. Negligible at
+  the current rubric size — 6 subsystems, 39 gaps, one render per `assess` invocation — so left as
+  is. Recorded only in case the rubric grows an order of magnitude and this stops being free.
+
 ## Beyond v1.1 — larger directions
 
 These come from the project's original design document, which lives outside this repository

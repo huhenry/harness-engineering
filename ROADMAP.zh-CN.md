@@ -32,6 +32,36 @@ v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则
   "一份说明循环定义在哪里的文档"和"一个真的会把循环启动起来的触发器"——这跟上一条一样，
   是"'存在'到底意味着什么"的改动，不是一个特例补丁。
 
+- **抑制机制没有"严重程度"这个维度。** `presupposedBy`（`scripts/lib/rubric.mjs`）允许一个
+  `low`（低危）gap 抑制掉 `high`（高危）gap，而且这不是假设情况：`loop.none`（低危）如今就在
+  抑制 `loop.no-stop-condition` 和 `loop.no-budget-cap`（都是高危）——直接对 `fixtures/bad-repo`
+  跑一遍 `assess` 就能验证到。v1.1 交付的是一次"披露"，而不是一次"根治"：`suppressedHighNote`
+  （`scripts/lib/report.mjs`）现在会打印出报告隐藏了多少条高危 gap，并点名是哪条 gap 让它们被
+  隐藏，这样退出码是 1、报告里却一条高危发现都看不到的情况，就不再是一副自相矛盾的样子。之所以
+  没有动手根治，是因为唯一能消除这种不对称的做法——不让任何 gap 去抑制比自己更严重的 gap——会在
+  同一份 fixture 上把 `loop.no-stop-condition` 和 `loop.no-budget-cap` 从 `loop.none` 底下重新
+  翻出来，原样复现这个里程碑本来要消灭的那个矛盾："一个 gap 的前提，是另一个 gap 刚说不存在的
+  东西"。如果以后真的给 `presupposedBy` 加上严重程度规则，这条披露文案就应该被重新考虑，而不是
+  留着跟新规则并存——两者是同一个事实的两种不同处理方式，不是可以一起留在报告里的搭档。
+
+- **`loop.no-entrypoint` 没有配套的固定 fixture。** v1.1 新加的这个 gap id，对应的是"循环写在
+  文档里、却没有任何东西真的触发它"（`scripts/lib/scorers/loop.mjs` 的第 2 档），目前只靠
+  `tests/scorers/loop.test.mjs` 里的单元测试覆盖——那些测试是在内存里现拼一个 `files: {...}`
+  对象来搭仓库，不是真的仓库。三个已提交的 fixture 都到不了这个状态：直接读
+  `fixtures/good-repo`、`fixtures/mid-repo`、`fixtures/bad-repo` 就能确认，它们的文档文件
+  （`AGENTS.md`/`CLAUDE.md`/`README.md`）里根本没有出现过循环相关的关键词，连第 1 档都过不了，
+  更别说停在"有描述、没入口"的第 2 档。开发这处修复（`3709854`）时用来复现问题的两次实测，也都是
+  手工现搭的临时目录仓库，跑完测试就删了，从没进过仓库。补一个第五个 fixture——一份 `AGENTS.md`
+  描述了自主循环，但没有 `loop/` 目录、没有定时触发的工作流、`harness.config.json` 也没声明
+  `loop` 字段——就能让 `loop.none` / `loop.no-entrypoint` 这次拆分从此有回归测试兜底，跟另外
+  三个 fixture 已经兜住的其余阶梯一样。
+
+- **`suppressedHighNote` 每次渲染都会调用两次 `allGaps`。** `scripts/lib/report.mjs` 里的
+  `suppressedHighNote` 先调用一次 `allGaps(report)` 筛出被隐藏的高危 gap，又调用一次
+  `allGaps(report)` 建立 id 到标题的映射表，用来在披露文案里点名。以目前的 rubric 规模——6 个
+  子系统、39 条 gap，每次 `assess` 只渲染一次——这点开销可以忽略，所以没有动它。记在这里，只是
+  为了防着以后 rubric 规模涨一个数量级、这点开销不再是免费的那一天。
+
 ## v1.1 之后：更大的方向
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，
