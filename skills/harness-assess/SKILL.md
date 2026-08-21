@@ -41,6 +41,7 @@ Score a repository's six harness subsystems and report exactly what is missing, 
 - **L4 is unreachable without verify evidence.** L4 requires Feedback >= 3 *and* fresh, passing verify evidence (`.harness/verify-report.json`, valid schema, generated within the last 24 hours). Without a verify report, `hasTestEvidence` is always false, so the Feedback subsystem's rung 3 can never pass and Feedback can never exceed 2 — no matter how good the declared commands look on paper, L4 is structurally unreachable on declared commands alone. Tell the user to run `harness-verify --run` before promising L4 is in reach.
 - L5 additionally requires Loop >= 3 and every subsystem >= 3.
 - The Gaps-by-ROI table is already sorted, highest ROI first — read it top to bottom, don't re-sort it by eye.
+- `--json` legitimately contains gaps the markdown does not, each carrying `suppressedBy: "<some other gap id>"`. Those are real failing checks that would read as a contradiction next to the gap that names them — "Progress file is stale" beside "No progress file" — so the human report hides them and the exit code still counts them. This is not a bug and not a discrepancy to report: quote the markdown's Gaps-by-ROI list, and if you are reading the JSON, treat a `suppressedBy` gap as "true, but fix the gap it points at first".
 
 ## Hard rules
 
