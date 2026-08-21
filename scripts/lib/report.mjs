@@ -51,19 +51,26 @@ export function buildReport({
 
   const subsystems = SUBSYSTEMS.map((id) => {
     const r = results[id];
-    // Drop any gap whose precondition gap is also present in this same
-    // subsystem — reporting "Progress file is stale" alongside "No progress
-    // file" tells the user about a file the report just said does not
-    // exist. Filtered here at render time, not in ladder.mjs: the score is
-    // a fact about which rungs failed and must not move.
+    // A gap whose precondition gap is also present in this same subsystem is
+    // MARKED, never dropped — reporting "Progress file is stale" alongside
+    // "No progress file" tells the user about a file the report just said
+    // does not exist, so the human report hides it, but it is still a
+    // failing check and everything that acts on facts must still see it.
+    //
+    // Marking rather than filtering is the whole design. The first version
+    // filtered here, and two consumers downstream read the filtered list
+    // without anyone noticing: `assess`'s exit code (a repo with a
+    // suppressed high-severity gap silently started exiting 0) and
+    // `scaffold`'s plan. Both were reading `subsystems[].gaps` because that
+    // is the obvious thing to read. Now the obvious thing to read is
+    // complete, and hiding is an explicit opt-in that only renderMarkdown
+    // takes — so the failure mode inverts: forgetting about suppression
+    // over-reports rather than under-reports.
     const present = new Set(r.gapIds);
-    const visibleGapIds = r.gapIds.filter((gapId) => {
-      const pre = gapById(gapId).presupposedBy;
-      return pre === null || !present.has(pre);
-    });
-    const gaps = sortGaps(visibleGapIds.map((gapId) => {
+    const gaps = sortGaps(r.gapIds.map((gapId) => {
       const def = gapById(gapId);
       const vars = r.gapVars?.[gapId] ?? {};
+      const pre = def.presupposedBy;
       return {
         id: def.id,
         severity: def.severity,
@@ -72,6 +79,10 @@ export function buildReport({
         fix: materialize(def.fixKey, lang, vars),
         scaffoldable: def.scaffoldable,
         roi: computeRoi(def, r.score),
+        // The gap id that makes this one not worth showing a human, or
+        // null. Never affects the score, and never affects anything that
+        // decides what to do — only what gets printed.
+        suppressedBy: pre !== null && present.has(pre) ? pre : null,
       };
     }));
     return {
@@ -114,6 +125,30 @@ export function buildReport({
   };
 }
 
+/**
+ * Every gap the scorers found, flattened across subsystems and sorted once
+ * globally by ROI, each tagged with the subsystem it came from.
+ *
+ * This is what anything DECIDING something must call — `assess`'s exit code,
+ * `scaffold`'s plan — because suppression is a presentation choice and a
+ * suppressed gap is still a failing check. Reading `report.subsystems`
+ * directly is not wrong, it is just easy to get wrong; routing both
+ * behavioural consumers through one named function is what
+ * tests/report.test.mjs can then pin.
+ */
+export function allGaps(report) {
+  return sortGaps(report.subsystems.flatMap((s) => s.gaps.map((gap) => ({ ...gap, subsystemId: s.id }))));
+}
+
+/**
+ * The subset a human report shows: everything except gaps whose precondition
+ * is in the same report. Presentation only — see `allGaps` above for the
+ * list anything behavioural must use instead.
+ */
+export function visibleGaps(report) {
+  return allGaps(report).filter((gap) => gap.suppressedBy === null);
+}
+
 /** One markdown table row per subsystem: name, score/max, evidence-cap marker. */
 function renderSubsystemTable(report, lang) {
   const lines = [
@@ -140,14 +175,13 @@ function renderSubsystemTable(report, lang) {
  */
 function renderGapList(report, lang) {
   const lines = [`## ${t('report.gapsHeading', lang)}`, ''];
-  const allGaps = sortGaps(
-    report.subsystems.flatMap((s) => s.gaps.map((gap) => ({ ...gap, subsystemId: s.id }))),
-  );
-  if (allGaps.length === 0) {
+  // The one place suppression is allowed to take effect.
+  const shown = visibleGaps(report);
+  if (shown.length === 0) {
     lines.push(t('report.noGaps', lang), '');
     return lines;
   }
-  for (const gap of allGaps) {
+  for (const gap of shown) {
     const subsystemName = t(`subsystem.${gap.subsystemId}`, lang);
     lines.push(`### ${subsystemName} · ${gap.title} (ROI ${gap.roi})`, '');
     lines.push(`- ${t('report.why', lang, { text: gap.why })}`);
