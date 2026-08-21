@@ -127,7 +127,7 @@ export const MESSAGES = {
     // in -- a `scaffold --apply`'d clean-state-checklist.md, which has no
     // FILL: marker in either language and is not byte-identical either.
     'gap.state.handoff-unfilled.why': "Handoff artefacts that exist but were never filled in: {artefacts}. Every copy found either still carries an unreplaced FILL: marker, or is this project's shipped template with nothing added but scaffold's own provenance line, or could not be read at all — so nothing on disk records what actually happened.",
-    'gap.state.handoff-unfilled.fix': 'Replace every FILL: placeholder and any leftover template text in {artefacts} with what actually happened this session. Do not scaffold again — scaffold never overwrites, so it would only add a .harness-proposed sibling. If this tool could not read what is on disk, fix the permissions first.',
+    'gap.state.handoff-unfilled.fix': 'Replace every FILL: placeholder and any leftover template text in {artefacts} with what actually happened this session. Re-running scaffold cannot do that — it only ever writes new files and never edits one that already exists, so every path named here would be left exactly as it is. If this tool could not read what is on disk, fix the permissions first.',
     'gap.state.lifecycle-undocumented.title': 'State file lifecycle undocumented',
     'gap.state.lifecycle-undocumented.why': "Without a documented lifecycle, agents don't know when to create, update or retire each state file, so the whole state layer drifts and stops being trustworthy.",
     'gap.state.lifecycle-undocumented.fix': "Document each state file's lifecycle — who updates it, at what point, and when it gets archived or reset.",
@@ -366,7 +366,7 @@ export const MESSAGES = {
     // （未替换的 FILL: 标记、剥掉 scaffold 自己那行溯源注释之后与出厂模板
     // 逐字节相同、以及这个工具根本读不到该文件）。
     'gap.state.handoff-unfilled.why': '存在但没有填写的交接产物：{artefacts}。找到的每一份要么还带着未替换的 FILL: 标记，要么就是本项目的出厂模板、只多了 scaffold 自己加的那行溯源注释，要么这个工具根本读不到它——总之磁盘上没有任何东西记录了实际发生的事。',
-    'gap.state.handoff-unfilled.fix': '把 {artefacts} 里每一处 FILL: 占位符和残留的模板文字，换成这次会话实际发生的内容。不要再重新 scaffold——scaffold 从不覆盖已有文件，只会在旁边多写一个 .harness-proposed。如果是这个工具读不到文件，先修好它的权限。',
+    'gap.state.handoff-unfilled.fix': '把 {artefacts} 里每一处 FILL: 占位符和残留的模板文字，换成这次会话实际发生的内容。重新跑 scaffold 做不到这件事——它只会写新文件，从不编辑已经存在的文件，上面点名的每个路径都会原样不动。如果是这个工具读不到文件，先修好它的权限。',
     'gap.state.lifecycle-undocumented.title': '状态文件生命周期未说明',
     'gap.state.lifecycle-undocumented.why': '没有文档说明生命周期时，agent 不知道每份状态文件该在什么时候创建、更新或废弃，整个状态层就会逐渐失真、失去可信度。',
     'gap.state.lifecycle-undocumented.fix': '写清楚每份状态文件的生命周期——谁在什么节点更新它，什么时候归档或重置。',

@@ -13,9 +13,13 @@ was added and wired into the State scorer so an unfilled template no longer sati
 rung -- this surfaced a genuine defect (`scaffold` prepends a provenance stamp that defeated the
 byte-identity check; fixed by stripping the stamp before comparing) and one scope expansion, a new
 gap id `state.handoff-unfilled`, so a scaffolded-but-not-yet-filled-in handoff reports "exists but
-unfilled" rather than the misleading "no handoff doc". Report rendering now suppresses a gap that
-presupposes a file another gap already says is missing -- rendering only, no score moved.
-`install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files, scoped to
+unfilled" rather than the misleading "no handoff doc". The report now hides a gap that presupposes
+a file another gap already says is missing. That claim -- "rendering only" -- is the one this
+milestone got wrong twice, so read how it is enforced rather than trusting the phrase: every gap
+stays in the report carrying `suppressedBy`, only `renderMarkdown` drops the marked ones, and both
+things that DECIDE anything (`assess`'s exit code, `scaffold`'s plan) go through `report.mjs`'s
+`allGaps`, which never filters. A source-level test asserts neither entry point reads a gap list by
+hand. `install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files, scoped to
 skills actually copied from the source checkout after a reviewer caught the first draft rewriting a
 pre-existing third-party skill's placeholder too. Eight hand-written top-rung `4` literals
 collapsed into one `MAX_SCORE` constant in `rubric.mjs` -- pure refactor.
@@ -23,9 +27,20 @@ collapsed into one `MAX_SCORE` constant in `rubric.mjs` -- pure refactor.
 The review's fix wave then closed everything it raised: the handoff gaps now name the specific
 artefact each one is about (the mixed absent+unfilled report used to tell the user to open a file
 it had just said was missing), `state.handoff-unfilled`'s explanation no longer asserts a reason it
-cannot know, gap suppression grew from 2 declared pairs to 9 (four more subsystems) under a written
-bar for adding any more, `install.sh`'s substitution no longer corrupts the skills' own explanation
-of the placeholder, and the ROADMAP records what the placeholder rule still does not cover.
+cannot know, gap suppression grew from 2 declared pairs to 11 (four more subsystems) under a
+written bar for adding any more, `install.sh`'s substitution no longer corrupts the skills' own
+explanation of the placeholder, and the ROADMAP records what the placeholder rule still does not
+cover.
+
+A re-review of that wave then caught two regressions it had introduced, both since fixed and both
+worth remembering. Suppression had been implemented by FILTERING the gap list, and two consumers
+were quietly reading the filtered version -- `assess`'s exit code inverted from 1 to 0 for an
+ordinary repository whose only high-severity gaps happened to be suppressed, with no scorer change
+behind it. And `loop.none` was emitted from two rungs that mean different things ("no loop is
+described" and "a loop is described but nothing invokes it"), so attaching the loop presuppositions
+to that one id also silenced the stop-condition and budget-cap gaps for a repository that documents
+an autonomous loop and simply never wired it up -- the repository that most needs to hear them.
+Rung 2 now has its own gap id, `loop.no-entrypoint`.
 
 Baseline fixture scores are unchanged (`bad-repo` 0/24 L0, `mid-repo` 11/24 L2, `good-repo` 16/24
 L3) and this repository's own self-assessment is still 23/24 L5.

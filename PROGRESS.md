@@ -34,10 +34,17 @@ should be able to trust it instead of re-deriving state from the diff.
   unchanged — this was hardening, not a scoring behavior change.
 - v1.1 whole-branch review and its fix wave: the handoff gaps now name the artefact each one is
   actually about instead of both naming both files, `state.handoff-unfilled`'s explanation no
-  longer asserts a reason it cannot know, gap suppression covers 9 declared pairs instead of 2
+  longer asserts a reason it cannot know, gap suppression covers 11 declared pairs instead of 2
   (with a written bar for adding any more), `install.sh`'s substitution no longer rewrites the
   skills' own explanation of the placeholder, and `ROADMAP.md` records what the placeholder rule
   still does not cover. Text and rendering only — no score moved.
+- v1.1 re-review: fixed two regressions the fix wave introduced. Gap suppression marks rather than
+  filters, so `assess`'s exit code and `scaffold`'s plan see every failing check (the exit code had
+  silently inverted from 1 to 0 for a repository whose only high-severity gaps were suppressed).
+  And `loop.none` split into `loop.none` + `loop.no-entrypoint`, so a repository that documents an
+  autonomous loop but never wires it up keeps its stop-condition and budget-cap gaps instead of
+  losing them to a suppression meant for repositories with no loop at all. Gap ids 38 → 39; no
+  score moved.
 
 ## In Progress
 

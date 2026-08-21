@@ -130,9 +130,14 @@ export function score({ ctx, now }) {
   const featureListValid = hasFeatureListFile && validateFeatureList(featureListData).length === 0;
 
   const handoff = HANDOFF_ARTEFACTS.map((a) => ({ ...a, ...classifyHandoffArtefact(ctx, a.name) }));
-  const namesInState = (s) => handoff.filter((a) => a.state === s).map((a) => a.name);
-  const absentArtefacts = namesInState('absent');
-  const unfilledArtefacts = namesInState('unfilled');
+  const inState = (s) => handoff.filter((a) => a.state === s);
+  // Absent artefacts have no path, so the canonical name is all there is to
+  // name. Unfilled ones are named at the path they were actually found at:
+  // the user has to open THAT file, and a vendored template living at
+  // docs/clean-state-checklist.md would otherwise be reported at a root path
+  // that does not exist.
+  const absentArtefacts = inState('absent').map((a) => a.name);
+  const unfilledArtefacts = inState('unfilled').map((a) => a.path);
   // state.no-handoff fires when either artefact is missing outright;
   // state.handoff-unfilled fires when every existing copy of either
   // artefact is still a placeholder. A repository can trip both at once

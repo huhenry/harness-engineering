@@ -7,6 +7,7 @@ import { score, validateFeatureList } from '../../scripts/lib/scorers/state.mjs'
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { globToRegExp } from '../../scripts/lib/scan.mjs';
 import { buildReport, renderMarkdown } from '../../scripts/lib/report.mjs';
+import { MESSAGES } from '../../scripts/lib/i18n.mjs';
 
 const NOW = new Date('2026-08-10T00:00:00Z');
 const FRESH = new Date('2026-08-05T00:00:00Z'); // 5 days before NOW
@@ -405,7 +406,10 @@ test('one absent artefact plus one unfilled artefact reports both gap ids', () =
   // Each gap must be attributed to the artefact that actually caused it,
   // not to both artefacts unconditionally (see below for why).
   assert.deepEqual(r.gapVars['state.no-handoff'], { artefacts: 'session-handoff.md' });
-  assert.deepEqual(r.gapVars['state.handoff-unfilled'], { artefacts: 'clean-state-checklist.md' });
+  // Named at the path it really sits at -- the vendored copy under
+  // templates/en/ is the file the user has to deal with, and there is no
+  // clean-state-checklist.md at the root to send them to.
+  assert.deepEqual(r.gapVars['state.handoff-unfilled'], { artefacts: 'templates/en/clean-state-checklist.md' });
 });
 
 // Evidence must point at the artefact a reader can act on. Both copies here
@@ -452,6 +456,32 @@ test('an unfilled artefact is recorded as evidence, marked as unfilled', () => {
     gitLastCommits: { 'PROGRESS.md': FRESH },
   }));
   assert.equal(absent.evidence.filter((e) => e.path === 'clean-state-checklist.md').length, 0);
+});
+
+// An unfilled artefact is named at the path it actually sits at. Naming the
+// canonical root path would send the reader to a file that does not exist --
+// and it is also what made the fix text false: the text used to say
+// re-running scaffold "would only add a .harness-proposed sibling", which is
+// what happens when the ROOT path is occupied. When the only copy is below
+// the root, `scaffold --only state.no-handoff` plans `create` at the root
+// instead, leaving the real file untouched. The wording now describes the
+// outcome both branches share.
+test('an unfilled artefact below the root is named at its real path', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'docs/session-handoff.md': readShipped('session-handoff.md'),
+      'docs/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.deepEqual(r.gapVars['state.handoff-unfilled'],
+    { artefacts: 'docs/session-handoff.md, docs/clean-state-checklist.md' });
+  for (const lang of ['en', 'zh']) {
+    const fix = MESSAGES[lang]['gap.state.handoff-unfilled.fix'];
+    assert.ok(!/harness-proposed/.test(fix),
+      `${lang}: the fix must not promise a .harness-proposed sibling -- scaffold writes one only when the ROOT path is taken`);
+  }
 });
 
 // The mixed case, asserted on the RENDERED PROSE rather than on gap ids.
