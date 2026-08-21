@@ -64,28 +64,33 @@ test('every presupposedBy names a real gap in the SAME subsystem', () => {
   }
 });
 
-// Suppression is NOT render-only, whatever the mechanism's first comment
-// said: scaffold.mjs calls runAssess and reads report.subsystems.flatMap(s
-// => s.gaps), which buildReport has already filtered. So a suppressed gap
-// is also a gap `scaffold` will never write a template for. Every id
-// suppressed today has templates: [], which is why nothing scaffold does
-// has changed -- and this test is what keeps that from silently ceasing to
-// be true. The concrete case it forbids is loop.no-maker-checker ->
-// loop.none: loop.none writes the three loop/*.md files but NOT
-// evaluator-rubric.md, so wiring that pair would stop scaffold offering the
-// maker-checker rubric to repositories with no loop at all, and drop a
-// scaffolded empty repo's Loop score from 4/4 to 3/4. A subset (rather than
-// strictly empty) is allowed: if the precondition already writes everything
-// the suppressed gap would, scaffold's output is unchanged either way.
-test('no gap suppression can change what scaffold writes', () => {
+// An earlier version of this file asserted the opposite invariant -- that a
+// suppressed gap must scaffold nothing its precondition does not -- because
+// scaffold.mjs really did read the filtered gap list, so suppression could
+// silently stop a file being written. That was a bug in scaffold, and it is
+// fixed: both behavioural consumers now go through report.mjs's `allGaps`,
+// which never filters (pinned by tests/report.test.mjs's source check).
+//
+// The invariant worth keeping is the one that no longer depends on any
+// consumer behaving: a suppressed gap must not be the only claimant of a
+// template, because a claimant that is never reported still has to be
+// scaffoldable for the file to get written. This is now a statement about
+// the table alone, and it deliberately PERMITS loop.no-maker-checker ->
+// loop.none, which the old rule forbade: the id is suppressed in the report
+// and still scaffolds evaluator-rubric.md, which is exactly right.
+test('every template has at least one claimant, suppressed or not', () => {
+  const claimed = new Map();
   for (const g of GAPS) {
-    if (g.presupposedBy === null) continue;
-    const pre = GAPS.find((other) => other.id === g.presupposedBy);
-    const missing = g.templates.filter((tpl) => !pre.templates.includes(tpl));
-    assert.deepEqual(
-      missing, [],
-      `${g.id} is suppressed by ${pre.id} but would scaffold ${missing.join(', ')}, which ${pre.id} does not -- `
-      + 'suppressing it would silently stop scaffold writing those files',
+    for (const tpl of g.templates) {
+      if (!claimed.has(tpl)) claimed.set(tpl, []);
+      claimed.get(tpl).push(g.id);
+    }
+  }
+  for (const [tpl, claimants] of claimed) {
+    assert.ok(claimants.length > 0, `${tpl} has no claimant gap`);
+    assert.ok(
+      claimants.some((id) => GAPS.find((g) => g.id === id).scaffoldable),
+      `${tpl}'s only claimants are non-scaffoldable: ${claimants.join(', ')}`,
     );
   }
 });

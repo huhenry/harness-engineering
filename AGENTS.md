@@ -83,7 +83,7 @@ session.
 
 ## Where details live
 
-- [`references/rubric.md`](references/rubric.md) -- the full six-subsystem, 38-gap-id rubric this
+- [`references/rubric.md`](references/rubric.md) -- the full six-subsystem, 39-gap-id rubric this
   file is itself scored against; every claim above about what scores what is a paraphrase of it,
   and `tests/docs.test.mjs` fails if the two ever disagree.
 - [`references/failure-modes.md`](references/failure-modes.md) -- maps each gap id to the specific

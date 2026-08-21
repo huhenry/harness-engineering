@@ -296,7 +296,8 @@ test('C (dogfood): a full bilingual scaffold produces zero declared verify comma
       'state.no-progress', 'state.progress-stale', 'state.progress-incomplete',
       'state.no-feature-list', 'state.feature-list-invalid', 'state.no-handoff', 'state.lifecycle-undocumented',
       'feedback.commands-failing',
-      'loop.none', 'loop.no-stop-condition', 'loop.no-budget-cap', 'loop.no-maker-checker', 'loop.no-rollback',
+      'loop.none', 'loop.no-entrypoint', 'loop.no-stop-condition', 'loop.no-budget-cap',
+      'loop.no-maker-checker', 'loop.no-rollback',
     ];
     for (const id of mustNotAppear) {
       assert.ok(!allGaps.includes(id), `${lang}: unexpected self-inflicted gap "${id}" (all gaps: ${allGaps.join(', ')})`);

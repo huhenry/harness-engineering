@@ -21,29 +21,31 @@ export const MAX_SCORE = 4;
  * table, not a new branch in the renderer.
  *
  * The bar for adding a pair is deliberately higher than "these two
- * co-occur". All four of these must hold:
+ * co-occur". All three of these must hold:
  *
  *   1. Same subsystem (pinned by tests/rubric.test.mjs).
  *   2. The suppressed gap's own TEXT names an object whose existence the
  *      other gap denies — it is incoherent in that state, not merely lower
  *      priority. Two independent facts about two different artefacts are
- *      NOT a presupposition, however reliably they appear together.
- *   3. The suppressed gap writes no template the precondition gap does not
- *      already write (in practice: it is not scaffoldable at all). See the
- *      scores/scaffold note below — this is a real constraint, not a
- *      formality, and it is why loop.no-maker-checker is not wired to
- *      loop.none.
- *   4. Fixing the precondition re-surfaces the suppressed gap on the next
+ *      NOT a presupposition, however reliably they appear together. This is
+ *      the only substantive requirement, and it is a claim about PROSE.
+ *   3. Fixing the precondition re-surfaces the suppressed gap on the next
  *      run if it is still true, so suppression defers information rather
  *      than losing it.
  *
- * SCORES are unaffected: ladder.mjs still collects every failing check and
- * buildReport filters afterwards. But this is NOT purely a render-time
- * relationship, and it must not be described as one: scaffold.mjs calls
- * runAssess and reads `report.subsystems.flatMap((s) => s.gaps)` — the
- * POST-suppression list — so a suppressed gap is also a gap scaffold will
- * not act on. Every id suppressed today has `templates: []`, so nothing
- * scaffold writes changes; requirement 3 above is what keeps that true.
+ * It really is a RENDER-time relationship only, and that is enforced rather
+ * than hoped for. ladder.mjs collects every failing check; buildReport marks
+ * the suppressed ones with `suppressedBy` but keeps them in the list; only
+ * renderMarkdown drops them. Scores are untouched, and so is everything that
+ * DECIDES something — `assess`'s exit code and `scaffold`'s plan both go
+ * through report.mjs's `allGaps`, which never filters.
+ *
+ * An earlier version of this comment listed a fourth requirement (a
+ * suppressed gap must scaffold nothing its precondition does not), because
+ * scaffold really did read the filtered list and suppression really could
+ * stop a file being written. That was a bug in scaffold, not a property of
+ * suppression, and it has been fixed; the requirement is gone with it. Its
+ * one casualty, loop.no-maker-checker, is now wired like its three siblings.
  */
 const def = (id, severity, effort, templates = [], presupposedBy = null) => ({
   id,
@@ -146,24 +148,39 @@ export const GAPS = [
   def('feedback.no-e2e', 'medium', 3),
   def('feedback.no-observability', 'low', 2),
   // loop
+  //
+  // loop.none and loop.no-entrypoint are two DIFFERENT facts, and used to
+  // share one id. loop.mjs's rungs 1 and 2 ask different questions -- "is a
+  // loop pattern described anywhere?" and "does anything actually invoke
+  // it?" -- and `presupposedBy` keys on the id, so while both rungs emitted
+  // `loop.none` there was no way to suppress the rung-3+ gaps for a repo
+  // that has never heard of a loop WITHOUT also suppressing them for a repo
+  // that documents an autonomous loop in detail and simply never wired it
+  // up. The second repo is the one that most needs to be told its loop has
+  // no stop condition and no budget cap. Splitting the id is what lets the
+  // three high-severity properties below attach to rung 1 alone.
   def('loop.none', 'low', 1, ['loop/goal-loop.md', 'loop/timer-loop.md', 'loop/maker-checker-loop.md']),
+  // Not scaffoldable, deliberately. `loop/*.md` is one of the three things
+  // that satisfies rung 2, so writing those templates here WOULD close this
+  // gap -- which is exactly the objection: this repository has already shown
+  // it knows what a loop is, and handing it three unfilled pattern primers
+  // would buy it a rung for files nobody has read rather than for anything
+  // that runs. The fix text names the three real entry points instead.
+  def('loop.no-entrypoint', 'low', 2, [], 'loop.none'),
   // Every one of these describes a property OF the loop — its stop
-  // condition, its budget, its rollback path. "No agentic loop defined"
-  // denies the loop they are properties of, and fixing loop.none brings all
-  // three straight back on the next run if they are still missing.
+  // condition, its budget, its reviewer role, its rollback path. "No agentic
+  // loop defined" denies the loop they are properties of, and fixing
+  // loop.none brings all four straight back on the next run if they are
+  // still missing. All four attach to loop.none, never to
+  // loop.no-entrypoint: a described-but-unwired loop still has a stop
+  // condition to specify.
   def('loop.no-stop-condition', 'high', 2, [], 'loop.none'),
   def('loop.no-budget-cap', 'high', 2, [], 'loop.none'),
-  // Deliberately NOT wired to loop.none, unlike its three siblings above,
-  // even though the same argument applies to its text. It is the only
-  // rung-3+ loop gap that is scaffoldable, and its templates are not a
-  // subset of loop.none's: loop.none writes the three loop/*.md files but
-  // never evaluator-rubric.md. Because scaffold.mjs consumes the
-  // POST-suppression gap list, suppressing this id would stop `scaffold`
-  // offering evaluator-rubric.md to exactly the repositories with no loop
-  // at all — the ones that need it most — and would drop a scaffolded empty
-  // repository's Loop score from 4/4 to 3/4. Requirement 3, and the reason
-  // it is stated as a requirement rather than left to judgment.
-  def('loop.no-maker-checker', 'medium', 2, ['evaluator-rubric.md', 'loop/maker-checker-loop.md']),
+  // Scaffoldable AND suppressed, which is only coherent because scaffold
+  // reads the unsuppressed list: a repo with no loop at all still gets
+  // evaluator-rubric.md offered, it just is not told twice in the same
+  // report that its nonexistent loop has no reviewer step.
+  def('loop.no-maker-checker', 'medium', 2, ['evaluator-rubric.md', 'loop/maker-checker-loop.md'], 'loop.none'),
   def('loop.no-rollback', 'medium', 2, [], 'loop.none'),
 ];
 

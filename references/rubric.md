@@ -140,14 +140,20 @@ Scored from `AGENTS.md`, `CLAUDE.md`, `README.md`, and any `loop/*.md` file, con
 
 | Score | Criterion |
 | --- | --- |
-| 0 | No mention of an autonomous/scheduled loop anywhere in those docs. |
+| 0 | No mention of an autonomous/scheduled loop anywhere in those docs. Reports `loop.none`. |
 | 1 | The docs mention a loop pattern (`autonomous`, `loop`, `cron`, `scheduled`, or the Chinese equivalents). |
-| 2 | A concrete entry point exists: a scheduled CI workflow, a `loop/*.md` file, or `harness.config.json` declares a `loop` field. |
+| 2 | A concrete entry point exists: a scheduled CI workflow, a `loop/*.md` file, or `harness.config.json` declares a `loop` field. Failing this rung alone — a loop described in prose that nothing invokes — reports `loop.no-entrypoint`, not `loop.none`. |
 | 3 | The docs describe both a stop condition and a budget cap (iteration/time/spend limit). |
 | 4 | The docs describe a maker-checker split (or `evaluator-rubric.md` exists), **and** a rollback mechanism. |
 
-Gap ids: `loop.none`, `loop.no-stop-condition`, `loop.no-budget-cap`, `loop.no-maker-checker`,
-`loop.no-rollback`.
+Rungs 0 and 2 report **different** gap ids on purpose. "No loop pattern is described anywhere" and
+"a loop is described but nothing runs it" are different facts with different fixes, and the rung-3
+and rung-4 gaps below are suppressed only beneath the first: a repository that documents an
+autonomous loop and never wires it up is still told, in full, that its loop has no stop condition
+and no budget cap. A repository that has never mentioned a loop is told one thing.
+
+Gap ids: `loop.none`, `loop.no-entrypoint`, `loop.no-stop-condition`, `loop.no-budget-cap`,
+`loop.no-maker-checker`, `loop.no-rollback`.
 
 ## Levels
 

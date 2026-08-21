@@ -419,7 +419,8 @@ test('C (dogfood): scaffold --apply on bad-repo, then this project\'s own assess
     const mustNotAppear = [
       'instructions.missing', 'tools.no-entrypoint', 'tools.no-permissions',
       'state.no-progress', 'state.no-feature-list', 'state.no-handoff',
-      'loop.none', 'loop.no-maker-checker', 'loop.no-stop-condition', 'loop.no-budget-cap', 'loop.no-rollback',
+      'loop.none', 'loop.no-entrypoint', 'loop.no-maker-checker', 'loop.no-stop-condition',
+      'loop.no-budget-cap', 'loop.no-rollback',
       'feedback.commands-failing',
     ];
     for (const id of mustNotAppear) {

@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';
 import { score } from '../../scripts/lib/scorers/loop.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { globToRegExp } from '../../scripts/lib/scan.mjs';
+import { buildReport, allGaps, visibleGaps } from '../../scripts/lib/report.mjs';
+
+/** Wrap one loop scorer result in a real report, so the assertions below can
+ *  be about what a user is actually shown rather than about raw gap ids. */
+function report(loopResult) {
+  const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  return buildReport({
+    repo: '/fake',
+    stack: [],
+    results: {
+      instructions: empty, tools: empty, environment: empty, state: empty, feedback: empty, loop: loopResult,
+    },
+    hasEvidence: false,
+    evidenceReason: 'missing',
+    verifiedAt: null,
+    toolVersion: '0.1.0',
+    now: new Date('2026-08-10T00:00:00Z'),
+    lang: 'en',
+  });
+}
 
 function input({
   files = {},
@@ -43,9 +63,13 @@ test('scores 0 with no gap-worthy loop keyword anywhere and no loop entry', () =
   assert.equal(r.cappedByEvidence, false);
 });
 
-test('loop.none appears only once even though both rung 1 and rung 2 fail (ladder dedup)', () => {
+// Rungs 1 and 2 no longer share an id (see loop.mjs's own note): a repo
+// with nothing at all fails both and reports both, and rubric.mjs suppresses
+// loop.no-entrypoint beneath loop.none so the rendered report is unchanged.
+test('a repo with nothing at all reports both rung-1 and rung-2 gaps, each once', () => {
   const r = score(input({}));
   assert.equal(r.gapIds.filter((g) => g === 'loop.none').length, 1);
+  assert.equal(r.gapIds.filter((g) => g === 'loop.no-entrypoint').length, 1);
 });
 
 test('a keyword in CLAUDE.md is recognized', () => {
@@ -66,11 +90,17 @@ test('a keyword only under loop/*.md is recognized', () => {
   assert.ok(r.score >= 1, 'loop/ directory files both satisfy the keyword check and the entry-point check');
 });
 
+// The distinction the id split exists for. This repo DOES describe a loop,
+// so loop.none is false about it and must not fire -- only loop.no-entrypoint
+// does. While both rungs shared one id, the rung-3+ properties were keyed to
+// loop.none and got suppressed for this repo, which is the one that most
+// needs to hear them.
 test('scores 1 when the keyword is present but there is no loop entry point at all', () => {
   const files = { 'AGENTS.md': 'This project runs an autonomous loop, described only in prose.\n' };
   const r = score(input({ files }));
   assert.equal(r.score, 1);
-  assert.ok(r.gapIds.includes('loop.none'));
+  assert.ok(r.gapIds.includes('loop.no-entrypoint'));
+  assert.equal(r.gapIds.includes('loop.none'), false, 'a loop IS described here');
 });
 
 test('a scheduled GitHub Actions workflow satisfies the rung-2 entry-point check', () => {
@@ -110,6 +140,27 @@ test('a bare substring match inside an unrelated word must not count as a loop k
   assert.equal(r.score, 0);
   assert.ok(r.gapIds.includes('loop.none'));
   assert.equal(r.evidence.some((e) => e.note === 'loop pattern described'), false);
+});
+
+// End-to-end proof of Regression C, on the rendered report rather than on
+// scorer gapIds: the described-but-unwired repo must KEEP its two
+// high-severity loop gaps, and the never-heard-of-a-loop repo must not be
+// told four more things about a loop it does not have.
+test('a described-but-unwired loop keeps its high-severity gaps; a loopless repo does not', () => {
+  const described = report(score(input({
+    files: { 'AGENTS.md': 'Runs an autonomous nightly loop. A reviewer agent checks each batch; failures are reverted (rollback).\n' },
+  })));
+  const shownIds = visibleGaps(described).map((g) => g.id);
+  assert.ok(shownIds.includes('loop.no-stop-condition'), `stop-condition gap must survive, got ${shownIds}`);
+  assert.ok(shownIds.includes('loop.no-budget-cap'), `budget-cap gap must survive, got ${shownIds}`);
+  assert.ok(shownIds.includes('loop.no-entrypoint'));
+  assert.equal(shownIds.includes('loop.none'), false);
+
+  const loopless = report(score(input({})));
+  assert.deepEqual(visibleGaps(loopless).map((g) => g.id), ['loop.none'],
+    'a repo with no loop at all is told one thing, not five');
+  assert.ok(allGaps(loopless).some((g) => g.severity === 'high'),
+    'the suppressed high-severity gaps are still there for anything behavioural');
 });
 
 test('genuine standalone Latin loop keywords are still recognized after anchoring', () => {

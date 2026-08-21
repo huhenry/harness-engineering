@@ -132,14 +132,19 @@ Gap id：`feedback.no-tests`、`feedback.no-declared-commands`、`feedback.comma
 
 | 分数 | 判据 |
 | --- | --- |
-| 0 | 这些文档里完全没提到自主/定时循环。 |
+| 0 | 这些文档里完全没提到自主/定时循环。报 `loop.none`。 |
 | 1 | 文档提到了循环模式（`autonomous`、`loop`、`cron`、`scheduled`，或对应的中文说法"自主""循环"）。 |
-| 2 | 存在一个具体的入口：一个定时触发的 CI 工作流、一个 `loop/*.md` 文件，或者 `harness.config.json` 声明了 `loop` 字段。 |
+| 2 | 存在一个具体的入口：一个定时触发的 CI 工作流、一个 `loop/*.md` 文件，或者 `harness.config.json` 声明了 `loop` 字段。只差这一级不过——循环写在文档里、却没有任何东西触发它——报的是 `loop.no-entrypoint`，不是 `loop.none`。 |
 | 3 | 文档同时描述了停止条件和预算上限（迭代次数/时间/花费的上限）。 |
 | 4 | 文档描述了 maker-checker 角色分离（或存在 `evaluator-rubric.md`），**并且**描述了回滚机制。 |
 
-Gap id：`loop.none`、`loop.no-stop-condition`、`loop.no-budget-cap`、`loop.no-maker-checker`、
-`loop.no-rollback`。
+第 0 级和第 2 级刻意报**不同**的 gap id。"文档里根本没描述过循环"和"循环描述了、但没有东西会跑
+它"是两件不同的事，修法也不同；而且下面第 3、4 级的 gap 只会在前者之下被抑制：一个把自主循环
+写得清清楚楚、只是没接上入口的仓库，依然会被完整告知它的循环缺少停止条件、缺少预算上限。
+一个从没提过循环的仓库，则只会被告知一件事。
+
+Gap id：`loop.none`、`loop.no-entrypoint`、`loop.no-stop-condition`、`loop.no-budget-cap`、
+`loop.no-maker-checker`、`loop.no-rollback`。
 
 ## 等级
 

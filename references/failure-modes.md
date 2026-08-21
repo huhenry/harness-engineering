@@ -3,7 +3,7 @@
 [*Learn Harness Engineering*](https://walkinglabs.github.io/learn-harness-engineering/en/) is the
 upstream course this tool operationalizes (see the root [README](../README.md#credits)). It
 describes, in prose, the failure modes a harness is supposed to prevent. This document is the
-bridge: for each lecture, the concrete failure mode it describes, and which of this tool's 38 gap
+bridge: for each lecture, the concrete failure mode it describes, and which of this tool's 39 gap
 ids (`scripts/lib/rubric.mjs`) checks for it.
 
 This maps 13 of the course's 14 lectures. Lecture 14, *From Single Loops to Graph Engineering*, was
@@ -154,6 +154,7 @@ Maps onto the entire `loop.*` subsystem:
 | Failure mode (quoted) | Gap id(s) |
 | --- | --- |
 | Agent drift mid-execution with no loop structure to self-correct | `loop.none` |
+| A loop that exists only as documentation, with nothing scheduled or wired to invoke it | `loop.no-entrypoint` |
 | Premature victory declaration without independent verification | `loop.no-maker-checker` |
 | "Models forget everything between runs; memory must live on disk" | `state.no-progress` |
 | No verifiable stopping condition | `loop.no-stop-condition` |

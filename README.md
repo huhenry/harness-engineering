@@ -162,7 +162,7 @@ reporting a real result about your repository.
 | `feedback` | When something is claimed to work, is there a real, machine-checkable, *actually-run* signal backing it? |
 | `loop` | If this repo runs unattended, does the loop have a stop condition, a budget cap, and a checker? |
 
-Each scores `0`–`4` (`24` total). Full per-score criteria and all 38 gap ids:
+Each scores `0`–`4` (`24` total). Full per-score criteria and all 39 gap ids:
 [`references/rubric.md`](references/rubric.md).
 
 ## Levels
