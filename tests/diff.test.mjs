@@ -120,8 +120,15 @@ test('reports built in different languages diff by id, not by title', () => {
   assert.equal(d.regression, false);
 });
 
-test('subsystems come out in the rubric order, always', () => {
-  const d = computeDiff(report(), report());
+// A fixture whose input subsystems already happen to be in rubric order
+// cannot distinguish "the output order comes from SUBSYSTEMS" from "the
+// output order comes from whichever report was passed in" — mapping over
+// `before.subsystems` instead of `SUBSYSTEMS` would pass just as easily.
+// Reversing the input is what makes the two hypotheses diverge.
+test('subsystems come out in the rubric order, always, even when the input is not', () => {
+  const before = report();
+  before.subsystems = [...before.subsystems].reverse();
+  const d = computeDiff(before, report());
   assert.deepEqual(
     d.subsystems.map((s) => s.id),
     ['instructions', 'tools', 'environment', 'state', 'feedback', 'loop'],
@@ -137,4 +144,54 @@ test('a newly introduced gap id alone is not a regression', () => {
   const d = computeDiff(before, after);
   assert.equal(d.regression, false);
   assert.deepEqual(d.gaps.introduced.map((g) => g.id), ['loop.no-entrypoint']);
+});
+
+// A missing or NaN score.total/score.max/level.id, or a report missing one
+// of the six SUBSYSTEMS ids, must not flow into arithmetic: NaN < 0 is
+// false, so an unguarded deltaTotal/deltaLevel would make the corresponding
+// regression clause silently never fire, and a missing subsystem used to
+// fall back to a fabricated score of 0 — a large phantom drop. computeDiff
+// is expected to throw a TypeError naming the offending field and side
+// (before/after) instead of computing on data it cannot trust.
+const MALFORMED_CASES = [
+  { desc: 'score.total is missing', hint: 'score.total', mutate: (r) => { delete r.score.total; } },
+  { desc: 'score.total is NaN', hint: 'score.total', mutate: (r) => { r.score.total = NaN; } },
+  { desc: 'score.max is missing', hint: 'score.max', mutate: (r) => { delete r.score.max; } },
+  { desc: 'score.max is NaN', hint: 'score.max', mutate: (r) => { r.score.max = NaN; } },
+  { desc: 'level.id is missing', hint: 'level.id', mutate: (r) => { delete r.level.id; } },
+  { desc: 'level.id is NaN', hint: 'level.id', mutate: (r) => { r.level.id = NaN; } },
+  {
+    desc: 'a subsystem is missing entirely',
+    hint: 'state',
+    mutate: (r) => { r.subsystems = r.subsystems.filter((s) => s.id !== 'state'); },
+  },
+  {
+    desc: "a subsystem's score is NaN",
+    hint: 'state',
+    mutate: (r) => { r.subsystems.find((s) => s.id === 'state').score = NaN; },
+  },
+];
+
+for (const { desc, hint, mutate } of MALFORMED_CASES) {
+  test(`computeDiff throws when the BEFORE report has ${desc}`, () => {
+    const before = report();
+    mutate(before);
+    assert.throws(
+      () => computeDiff(before, report()),
+      (err) => err instanceof TypeError && err.message.includes('before') && err.message.includes(hint),
+    );
+  });
+
+  test(`computeDiff throws when the AFTER report has ${desc}`, () => {
+    const after = report();
+    mutate(after);
+    assert.throws(
+      () => computeDiff(report(), after),
+      (err) => err instanceof TypeError && err.message.includes('after') && err.message.includes(hint),
+    );
+  });
+}
+
+test('a well-formed pair still computes without throwing', () => {
+  assert.doesNotThrow(() => computeDiff(report(), report()));
 });
