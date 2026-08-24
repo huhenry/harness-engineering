@@ -1,0 +1,81 @@
+# A GitHub Action wrapper around this repository's own `assess` + `diff`.
+#
+# It lives at the repository root because that is where GitHub (and the
+# Marketplace) looks for an action's metadata file; the code it runs is the
+# committed `scripts/action.mjs`, executed directly by the runner's Node.
+# There is no build step and no bundle: this project has zero dependencies
+# and that promise extends to the Action, so there is nothing to compile and
+# nothing that could drift out of sync with the sources in this repository.
+name: 'Harness Engineering'
+description: 'Comment the harness score delta of a pull request: assess the head, assess the base, and post the difference.'
+author: 'huhenry'
+
+branding:
+  icon: 'activity'
+  color: 'blue'
+
+inputs:
+  repo-path:
+    description: >-
+      Directory to assess, relative to the workspace. Defaults to the
+      repository root. The same path is exported from the base commit and
+      assessed a second time, so the two sides always describe the same
+      subtree.
+    required: false
+    default: '.'
+  base-ref:
+    description: >-
+      The commit to compare against. Defaults to the pull request's base sha.
+      It is read with `git archive`, which needs the commit to actually be
+      present in `.git` -- so the checkout step feeding this action must use
+      `fetch-depth: 0`. actions/checkout's default depth of 1 does not fetch
+      it, and the action will stop with an error saying exactly that rather
+      than guess.
+    required: false
+    default: ${{ github.event.pull_request.base.sha }}
+  fail-on-regression:
+    description: >-
+      Whether a regression (total score, level, or any subsystem moving
+      backwards) should fail this step. Defaults to false. A tool you install
+      to get information should not start failing your pipeline on the day
+      you install it -- the first thing anyone does with a new check is find
+      out what it says about their repository, and a check that goes red
+      before they have read a single number gets removed rather than
+      investigated. Turn it on deliberately once you have seen how the score
+      behaves on your own history, or leave it off and gate on the
+      `regression` output yourself.
+    required: false
+    default: 'false'
+  comment:
+    description: >-
+      Whether to post (or update) a pull request comment with the result. The
+      diff is always written to the job log and to the job summary, so
+      turning this off -- or failing to post, which is what happens on a pull
+      request from a fork -- still leaves the result visible.
+    required: false
+    default: 'true'
+  lang:
+    description: "Language for the rendered comment: 'en' or 'zh'."
+    required: false
+    default: 'en'
+
+outputs:
+  score-before:
+    description: 'Total harness score of the base commit.'
+  score-after:
+    description: 'Total harness score of the head commit.'
+  score-delta:
+    description: "Signed change in total score, e.g. '+3' or '-1'."
+  level-before:
+    description: 'Harness level (0-5) of the base commit.'
+  level-after:
+    description: 'Harness level (0-5) of the head commit.'
+  regression:
+    description: >-
+      'true' when the total score, the level, or any subsystem moved
+      backwards. This is what to gate on when `fail-on-regression` is left at
+      its default.
+
+runs:
+  using: 'node20'
+  main: 'scripts/action.mjs'

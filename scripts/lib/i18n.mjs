@@ -265,6 +265,16 @@ export const MESSAGES = {
     'diff.fixedHeading': 'Fixed',
     'diff.introducedHeading': 'Introduced',
     'diff.noGapChanges': 'No gap changes.',
+
+    // --- GitHub Action pull request comment ---
+    // The verdict line is the only part of the comment a reviewer is
+    // guaranteed to read, so each of the three cases has to say what
+    // actually happened in its own words. A regression must never be
+    // phrased in a way that could be skimmed as good news.
+    'action.verdict.regressed': 'This pull request **regressed** the harness score ({before} → {after}, {delta}). Reasons: {reasons}.',
+    'action.verdict.improved': 'This pull request **improved** the harness score ({before} → {after}, {delta}).',
+    'action.verdict.unchanged': 'This pull request left the harness score unchanged at {after}/{max} (L{level}).',
+    'action.footer': 'Posted by harness-engineering. This comment is edited in place on every push, never re-posted.',
   },
   zh: {
     'subsystem.instructions': '指令',
@@ -516,6 +526,12 @@ export const MESSAGES = {
     'diff.fixedHeading': '已修复',
     'diff.introducedHeading': '新引入',
     'diff.noGapChanges': '差距无变化。',
+
+    // --- GitHub Action pull request comment ---
+    'action.verdict.regressed': '这个 PR 让 harness 分数**出现回归**（{before} → {after}，{delta}）。原因：{reasons}。',
+    'action.verdict.improved': '这个 PR 让 harness 分数**有所提升**（{before} → {after}，{delta}）。',
+    'action.verdict.unchanged': '这个 PR 没有改变 harness 分数，仍然是 {after}/{max}（L{level}）。',
+    'action.footer': '由 harness-engineering 发布。这条评论每次 push 都会就地更新，不会重复发新的。',
   },
 };
 

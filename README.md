@@ -188,18 +188,119 @@ with exit `2` rather than silently compared — two reports built under differen
 carry fields that mean different things under the same key, and this project would rather refuse
 than answer with a number that merely looks plausible.
 
+## On every pull request: the GitHub Action
+
+`action.yml` at the root of this repository is a GitHub Action. It assesses the head of a pull
+request, assesses its base commit, and posts the difference as a comment — the same markdown
+`diff.mjs` prints above, so what a reviewer reads on the pull request is byte-for-byte what you
+get locally.
+
+```yaml
+name: harness-diff
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # required — see below
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: huhenry/harness-engineering@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+`@main` because this repository has no release tag yet. Pinning a third-party action to a moving
+branch is a supply-chain risk you should not accept as a habit — pin to a tag or a commit sha as
+soon as there is one to pin to.
+
+Zero dependencies here too: no `@actions/core`, no `@actions/github`, no bundle, no build step.
+The runner executes the committed `scripts/action.mjs` directly, so the code you can read in this
+repository is exactly the code that runs on your pull request.
+
+| Input | Default | What it does |
+| --- | --- | --- |
+| `repo-path` | `.` | Directory to assess. The same subtree is exported from the base commit, so both sides always describe the same thing. |
+| `base-ref` | `${{ github.event.pull_request.base.sha }}` | The commit to compare against. |
+| `fail-on-regression` | `false` | Whether a regression fails the step. See below. |
+| `comment` | `true` | Whether to post (or update) a pull request comment. |
+| `lang` | `en` | Language of the comment: `en` or `zh`. |
+
+Outputs: `score-before`, `score-after`, `score-delta`, `level-before`, `level-after`, and
+`regression`. Exit codes follow the same convention as the CLIs above — `1` only ever means an
+opted-in regression, never a failed comment.
+
+### `fetch-depth: 0` is required
+
+The base side comes from `git archive <base-sha>`, unpacked into a temporary directory outside
+your repository. That is a pure read: unlike a second `actions/checkout` or a `git worktree add`,
+it writes nothing into your workspace and nothing into `.git/`, which is what lets this project
+keep promising that `assess` is read-only and that the Action never writes the repository it is
+assessing.
+
+The cost is that the base commit has to actually be present in `.git`, and `actions/checkout`
+defaults to `fetch-depth: 1`, which does not fetch it. When that happens the action stops and
+names `fetch-depth: 0` in the error, rather than passing along a bare `fatal: not a valid object
+name` and leaving you to guess.
+
+### Pull requests from forks do not get a comment
+
+GitHub gives a workflow triggered by a fork's pull request a read-only `GITHUB_TOKEN` regardless
+of what `permissions:` asks for. Posting returns 403, the action logs a warning, and the step
+still succeeds. The diff is written to the job summary and the job log, so the result is visible
+either way — just not as a comment.
+
+The usual workaround is `pull_request_target`, which runs with a writable token in the context of
+the base repository while checking out the fork's code. Don't. That is a well-known way to hand
+an attacker who opens a pull request write access to your repository, and a comment is not worth
+it. This project would rather state the limitation than paper over it.
+
+### `fail-on-regression` defaults to `false`
+
+Deliberately. The first thing anyone does with a new check is find out what it says about their
+repository, and they cannot do that while it is blocking their merge queue. A check that turns
+red on the day it is installed gets uninstalled, not investigated. Turn it on once you have seen
+how the score behaves on your own history, or leave it off and gate on the `regression` output
+yourself. This repository sets it to `true` for its own pull requests
+(`.github/workflows/harness-diff.yml`) — a decision it is entitled to make about itself, and not
+one it makes for you.
+
+### One comment, edited in place
+
+Every comment opens with a hidden `<!-- harness-engineering-diff -->` marker. Before posting, the
+action looks for a comment whose *first line* is that marker and `PATCH`es it instead of adding
+another. Only the first line counts, so quoting the comment back in a reply does not make the
+next run start editing your message. A fresh comment on every push is how a useful bot becomes a
+muted bot.
+
+### The one thing the comparison cannot see
+
+`git archive` exports tracked files only, so the base side can never contain
+`.harness/verify-report.json` — this tool's own verify evidence is deliberately never committed.
+If an earlier step in the same job ran `verify --run`, the head side has evidence the base side
+structurally cannot, and Feedback and Environment will show an improvement nobody made. The
+action detects that asymmetry and warns about it. Run it *before* any `verify --run` step and
+both sides are evidence-free, which is a fair comparison.
+
 ## Exit codes
 
 These are a stable interface — this project's own CI gates on them, and the first command above
 deliberately exits `1` because `fixtures/bad-repo` is a repository with real high-severity gaps.
 A non-zero exit here means "the repository has a problem", not "the tool broke".
 
-| Code | `assess` | `verify` | `scaffold` | `diff` |
-| --- | --- | --- | --- | --- |
-| `0` | `--min-level` met, or no high-severity gaps when no level was requested | every command passed (dry-run: every command was planned) | dry-run, or `--apply` wrote everything it planned | comparison succeeded, no regression |
-| `1` | `--min-level` not met, or high-severity gaps found | any command failed, timed out, or was blocked | a write failed, or a template was missing | comparison succeeded, but a regression was found (score, level, or a subsystem moved backwards) |
-| `2` | usage error (a bad flag or value) | usage error | usage error | usage error (bad flag, missing file, unparseable JSON, wrong argument count, or a `schemaVersion` mismatch) |
-| `3` | unexpected internal error | unexpected internal error | unexpected internal error | unexpected internal error |
+| Code | `assess` | `verify` | `scaffold` | `diff` | the Action |
+| --- | --- | --- | --- | --- | --- |
+| `0` | `--min-level` met, or no high-severity gaps when no level was requested | every command passed (dry-run: every command was planned) | dry-run, or `--apply` wrote everything it planned | comparison succeeded, no regression | ran to completion; a comment that could not be posted is a warning, not a failure |
+| `1` | `--min-level` not met, or high-severity gaps found | any command failed, timed out, or was blocked | a write failed, or a template was missing | comparison succeeded, but a regression was found (score, level, or a subsystem moved backwards) | `fail-on-regression` is on and a real regression was found |
+| `2` | usage error (a bad flag or value) | usage error | usage error | usage error (bad flag, missing file, unparseable JSON, wrong argument count, or a `schemaVersion` mismatch) | usage error (an input value that is not a YAML boolean, an unsupported `lang`, an empty `base-ref`, or a `base-ref` that is not in `.git`) |
+| `3` | unexpected internal error | unexpected internal error | unexpected internal error | unexpected internal error | unexpected internal error |
 
 `2` and `3` are deliberately distinct: a mistyped flag and a crash in the tool should never be
 indistinguishable to a script, and neither should be confused with `1`, which is a successful run

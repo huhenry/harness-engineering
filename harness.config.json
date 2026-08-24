@@ -3,7 +3,7 @@
   "verify": {
     "bootstrap": "./init.sh",
     "test": "node --test",
-    "lint": "node --check scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs"
+    "lint": "node --check scripts/action.mjs scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs"
   },
   "ignore": ["fixtures/**"]
 }

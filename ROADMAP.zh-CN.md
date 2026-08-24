@@ -65,15 +65,20 @@ v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则
 ## v1.1 之后：更大的方向
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，
-所以它本来就不会出现在一次检出中。下面是方向，不是排期，一条都还没开始动。
+所以它本来就不会出现在一次检出中。下面是方向，不是排期。其中的 GitHub Action 已经在 v1.2
+交付，下面用删除线标出；其余几条都还没开始动。
 
 - **Graph engineering。** 多 agent 编排：把 agent 的执行步骤定义成一张 DAG，并且为**整张图**
   定义验收标准，而不是一次只管一个 agent。这个工具里的 Loop 子系统，是这件事的单 agent 特例。
 - **更多技术栈探测器。** Rust、Java、Swift，以及嵌入式的 PlatformIO。
   `scripts/lib/stack.mjs` 里的探测表是按"加一条签名就能扩展"设计的，不用改任何评分逻辑——
   加一个新栈不应该需要动到任何一个 scorer。
-- **GitHub Action。** 发一个市场版本，在 PR 上自动评论 harness 分数的变化，
-  把体检变成 review 阶段的一个信号，而不是一件"谁记得就跑一下"的事。
+- ~~**GitHub Action。** 发一个市场版本，在 PR 上自动评论 harness 分数的变化，
+  把体检变成 review 阶段的一个信号，而不是一件"谁记得就跑一下"的事。~~ **已在 v1.2 交付。**
+  仓库根目录的 `action.yml`，用 `node20` 直接执行仓库里的 `scripts/action.mjs`，零依赖、无构建
+  步骤；本仓库自己在 `.github/workflows/harness-diff.yml` 里对自己的 PR 跑它。input 列表、
+  `fetch-depth: 0` 的硬性要求，以及 fork PR 的限制，都写在 README 的 Action 一节里。刻意**没有**
+  做的部分：发布 Marketplace 上架条目——那需要一个本仓库目前还没有的 release tag。
 - **Web dashboard。** 把多个仓库的体检结果放在一个视图里看。
 
 ## 开发过程中记录下来的其他小问题（不是 v1.1 候选，仅作说明）

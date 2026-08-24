@@ -8,8 +8,8 @@ not just true "in general".
 - [ ] Every command declared in `harness.config.json`'s `verify` block
       exits 0 (or is still legitimately `null`, with a reason written
       somewhere a human can find it): `./init.sh`, `node --test`,
-      `node --check scripts/assess.mjs scripts/diff.mjs
-      scripts/scaffold.mjs scripts/verify.mjs`.
+      `node --check scripts/action.mjs scripts/assess.mjs
+      scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs`.
 - [ ] `node scripts/verify.mjs . --run` was actually run (not just the raw
       commands above) so `.harness/verify-report.json` is fresh -- `assess`
       cannot credit Feedback or reach L4 on stale or missing evidence.

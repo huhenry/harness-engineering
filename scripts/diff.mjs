@@ -26,8 +26,15 @@ function loadReport(path) {
 
 /** Format a delta with an explicit sign: `+4`, `-2`, or `0`. Bare numbers
  * read as ambiguous in a before/after context -- `4` could be a delta or a
- * raw score -- so every delta this script prints carries its own sign. */
-function fmtDelta(n) {
+ * raw score -- so every delta this script prints carries its own sign.
+ *
+ * Exported for scripts/action.mjs, whose verdict line quotes the same delta
+ * this script's markdown already prints. Two independent implementations of
+ * "how a delta is spelled" is precisely the hand-synced duplication this
+ * project keeps having to fix (see the lint command, MAX_SCORE, and
+ * PRUNE_DIRS/DEFAULT_IGNORE) -- one of them formats `0` as `+0` a year from
+ * now and nothing catches it. */
+export function fmtDelta(n) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
@@ -53,8 +60,17 @@ function renderGapLine(gap, lang) {
  * from an analogous renderer and a reviewer caught it) -- when both are
  * empty, a single explicit "no gap changes" line takes their place instead
  * of the document just trailing off after the subsystem table.
+ *
+ * Exported so scripts/action.mjs can put THIS body -- not a second,
+ * separately maintained rendering of the same DiffResult -- into its pull
+ * request comment. The Action wraps a marker line, a verdict sentence and a
+ * footer around it and changes nothing inside, so what a reviewer reads on
+ * a pull request is byte-for-byte what `diff.mjs` prints locally. Importing
+ * this module is side-effect-free: the `isMainModule()` guard at the bottom
+ * compares resolved paths, so nothing runs when it is imported rather than
+ * executed.
  */
-function renderDiffMarkdown(result, lang) {
+export function renderDiffMarkdown(result, lang) {
   const lines = [];
   lines.push(`# ${t('diff.title', lang)}`, '');
   lines.push(t('diff.score', lang, {

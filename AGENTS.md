@@ -36,7 +36,7 @@ what is written here, not a paraphrase of it.
 
 ```bash
 node --test
-node --check scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs
+node --check scripts/action.mjs scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs
 ```
 
 `node --test` takes **no path argument** -- it discovers every `tests/*.mjs`
