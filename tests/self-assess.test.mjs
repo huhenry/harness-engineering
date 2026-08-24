@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runAssess } from '../scripts/assess.mjs';
@@ -119,4 +119,49 @@ test('this repository still scores State 4 under the placeholder rule', () => {
   const r = runAssess({ repoPath: ROOT, lang: 'en', now: new Date() });
   const state = r.subsystems.find((s) => s.id === 'state');
   assert.equal(state.score, 4, `State dropped to ${state.score}: ${state.gaps.map((g) => g.id).join(', ')}`);
+});
+
+// Fix round 1 of 5 (task-2 review): the lint command --
+// `node --check scripts/*.mjs` -- is hand-copied into three files
+// (harness.config.json's verify.lint, Makefile's lint target, AGENTS.md's
+// Verification code block), and AGENTS.md states outright that these
+// commands are "declared verbatim in harness.config.json's verify block".
+// Nothing reconciled the three copies against each other or against the
+// real scripts/ directory, so adding scripts/diff.mjs landed in none of
+// them and `make lint` silently never syntax-checked the new CLI entry
+// point. The expectation here is DERIVED from disk (every top-level
+// scripts/*.mjs file, alphabetically) rather than a fourth hardcoded
+// filename sitting next to the first three -- the same class of
+// hand-synced-list defect scan.mjs's own PRUNE_DIRS/DEFAULT_IGNORE comment
+// and environment.mjs warn about elsewhere in this codebase. A future
+// scripts/*.mjs addition that nobody wires into all three copies fails
+// this test, rather than silently going unchecked by `make lint` again.
+test('the lint command names every scripts/*.mjs entry point, and its three copies never drift', () => {
+  const scriptFiles = readdirSync(join(ROOT, 'scripts'), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.mjs'))
+    .map((e) => e.name)
+    .sort();
+  assert.ok(scriptFiles.length > 0, 'expected at least one scripts/*.mjs entry point on disk');
+
+  const cfg = JSON.parse(readFileSync(join(ROOT, 'harness.config.json'), 'utf8'));
+  const configLint = cfg.verify.lint;
+
+  const makefile = readFileSync(join(ROOT, 'Makefile'), 'utf8');
+  const makefileMatch = makefile.match(/^lint:\n\t(.+)$/m);
+  assert.ok(makefileMatch, 'Makefile must have a lint: target with a recipe line');
+  const makefileLint = makefileMatch[1];
+
+  const agents = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8');
+  const agentsMatch = agents.match(/^node --check .+$/m);
+  assert.ok(agentsMatch, 'AGENTS.md must document the node --check lint command');
+  const agentsLint = agentsMatch[0];
+
+  // All three copies must be the same command, byte for byte -- not just
+  // each individually "close enough". AGENTS.md's own prose promises this.
+  assert.equal(makefileLint, configLint, "Makefile's lint recipe must be byte-identical to harness.config.json's verify.lint");
+  assert.equal(agentsLint, configLint, "AGENTS.md's lint command must be byte-identical to harness.config.json's verify.lint");
+
+  for (const name of scriptFiles) {
+    assert.ok(configLint.includes(`scripts/${name}`), `the lint command is missing scripts/${name}`);
+  }
 });
