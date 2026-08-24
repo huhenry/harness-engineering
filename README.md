@@ -134,18 +134,72 @@ Run `assess` again after `verify --run` and watch Feedback (and, once a bootstra
 declared, Environment) move from `capped — run verify --run for evidence` to a real score backed by
 a real exit code.
 
+## Comparing two assessments: `harness diff`
+
+`assess --json`'s output is a stable, versioned document (`schemaVersion`). Save two of them —
+before a change and after it, or from two branches — and `diff.mjs` turns the difference into a
+pass/fail signal a CI job can gate on, instead of a human re-reading two markdown reports side by
+side:
+
+```
+$ node scripts/assess.mjs fixtures/bad-repo  --json --out /tmp/h-before.json
+$ node scripts/assess.mjs fixtures/good-repo --json --out /tmp/h-after.json
+$ node scripts/diff.mjs /tmp/h-before.json /tmp/h-after.json
+# Harness Diff Report
+
+Score: 0 → 16 (+16)
+
+Level: L0 → L3 (+3)
+
+## Subsystem Scores
+
+| Subsystem | Before → After | Delta |
+| --- | --- | --- |
+| Instructions | 0 → 4 | +4 |
+| Tools | 0 → 3 | +3 |
+| Environment | 0 → 3 | +3 |
+| State | 0 → 4 | +4 |
+| Feedback | 0 → 2 | +2 |
+| Loop | 0 → 0 | 0 |
+
+## Fixed
+
+- No declared verification commands (high)
+- No AGENTS.md or CLAUDE.md (high)
+- No progress file (high)
+...
+```
+
+Comparing the same two reports in the other direction is a real regression, and exits `1`:
+
+```
+$ node scripts/diff.mjs /tmp/h-after.json /tmp/h-before.json; echo "exit=$?"
+...
+exit=1
+```
+
+`--json` emits the same `DiffResult` document, machine-readable: `schemaVersion`, `before`/`after`/
+`delta` for total score and level, `regression` and `regressionReasons` (`total`, `level`, or
+`subsystem:<id>`, never gap *count* — a tool upgrade that ships a new gap id would otherwise look
+identical to a repository actually regressing), per-subsystem deltas in rubric order, and
+`gaps.fixed`/`gaps.introduced` by id. `--out FILE` writes the report there instead of stdout, and
+prints nothing to stdout at all. A `schemaVersion` mismatch between the two input files is refused
+with exit `2` rather than silently compared — two reports built under different schema versions can
+carry fields that mean different things under the same key, and this project would rather refuse
+than answer with a number that merely looks plausible.
+
 ## Exit codes
 
 These are a stable interface — this project's own CI gates on them, and the first command above
 deliberately exits `1` because `fixtures/bad-repo` is a repository with real high-severity gaps.
 A non-zero exit here means "the repository has a problem", not "the tool broke".
 
-| Code | `assess` | `verify` | `scaffold` |
-| --- | --- | --- | --- |
-| `0` | `--min-level` met, or no high-severity gaps when no level was requested | every command passed (dry-run: every command was planned) | dry-run, or `--apply` wrote everything it planned |
-| `1` | `--min-level` not met, or high-severity gaps found | any command failed, timed out, or was blocked | a write failed, or a template was missing |
-| `2` | usage error (a bad flag or value) | usage error | usage error |
-| `3` | unexpected internal error | unexpected internal error | unexpected internal error |
+| Code | `assess` | `verify` | `scaffold` | `diff` |
+| --- | --- | --- | --- | --- |
+| `0` | `--min-level` met, or no high-severity gaps when no level was requested | every command passed (dry-run: every command was planned) | dry-run, or `--apply` wrote everything it planned | comparison succeeded, no regression |
+| `1` | `--min-level` not met, or high-severity gaps found | any command failed, timed out, or was blocked | a write failed, or a template was missing | comparison succeeded, but a regression was found (score, level, or a subsystem moved backwards) |
+| `2` | usage error (a bad flag or value) | usage error | usage error | usage error (bad flag, missing file, unparseable JSON, wrong argument count, or a `schemaVersion` mismatch) |
+| `3` | unexpected internal error | unexpected internal error | unexpected internal error | unexpected internal error |
 
 `2` and `3` are deliberately distinct: a mistyped flag and a crash in the tool should never be
 indistinguishable to a script, and neither should be confused with `1`, which is a successful run

@@ -86,8 +86,6 @@ and none of them is started.
 - **More stack detectors.** Rust, Java, Swift, and embedded PlatformIO. The detector table in
   `scripts/lib/stack.mjs` is designed to be extended by adding a signature, not by editing scoring
   logic — a new stack should not require touching any scorer.
-- **`harness diff`.** Score movement between two assessments of the same repository, so a team can
-  see whether their harness is improving rather than only what it scores today.
 - **A GitHub Action.** A marketplace action that comments the harness score delta on a pull
   request, turning the assessment into a review-time signal instead of something someone remembers
   to run.

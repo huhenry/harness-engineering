@@ -126,18 +126,73 @@ Evidence written to <repo>/.harness/verify-report.json
 跑完 `verify --run` 之后再跑一遍 `assess`，看 Feedback（以及一旦声明了启动命令之后的
 Environment）从"因缺证据被封顶——跑一遍 `verify --run` 拿证据"变成一个背后有真实退出码撑着的分数。
 
+## 比较两次体检结果：`harness diff`
+
+`assess --json` 的输出是一份稳定的、带版本号的文档（`schemaVersion`）。存两份——改动前一份、
+改动后一份，或者两个分支各一份——`diff.mjs` 就能把两者的差异变成一个 CI 可以直接拿来做门禁的
+通过/失败信号，不用再靠人肉对比两份 markdown 报告：
+
+```
+$ node scripts/assess.mjs fixtures/bad-repo  --json --out /tmp/h-before.json
+$ node scripts/assess.mjs fixtures/good-repo --json --out /tmp/h-after.json
+$ node scripts/diff.mjs /tmp/h-before.json /tmp/h-after.json
+# Harness Diff Report
+
+Score: 0 → 16 (+16)
+
+Level: L0 → L3 (+3)
+
+## Subsystem Scores
+
+| Subsystem | Before → After | Delta |
+| --- | --- | --- |
+| Instructions | 0 → 4 | +4 |
+| Tools | 0 → 3 | +3 |
+| Environment | 0 → 3 | +3 |
+| State | 0 → 4 | +4 |
+| Feedback | 0 → 2 | +2 |
+| Loop | 0 → 0 | 0 |
+
+## Fixed
+
+- No declared verification commands (high)
+- No AGENTS.md or CLAUDE.md (high)
+- No progress file (high)
+...
+```
+
+（默认输出是英文，跟 `assess` 一样——加 `--lang zh` 会换成中文标题和栏位，gap 名字本身也会
+换成中文。）
+
+把这两份报告反过来比，就是一次真实的回归，退出码是 `1`：
+
+```
+$ node scripts/diff.mjs /tmp/h-after.json /tmp/h-before.json; echo "exit=$?"
+...
+exit=1
+```
+
+`--json` 输出同一份机器可读的 `DiffResult`：`schemaVersion`、总分和等级的
+`before`/`after`/`delta`、`regression` 和 `regressionReasons`（取值是 `total`、`level`，或者
+`subsystem:<id>`，刻意不看 gap **数量**——不然工具升级新增一个 gap id，看起来就会跟仓库真的
+变差了一模一样）、按 rubric 固定顺序排列的各子系统 delta，以及按 id 列出的
+`gaps.fixed`/`gaps.introduced`。`--out FILE` 会把报告写到文件里而不是标准输出，并且标准输出
+一个字节都不会打印。两份输入文件的 `schemaVersion` 对不上时会直接拒绝比对，退出码 `2`——不同
+schema 版本的报告，同一个字段可能代表完全不同的含义，本项目宁可拒绝，也不愿意给出一个看起来
+合理、实际上没有意义的数字。
+
 ## 退出码
 
 这是一份稳定的对外接口——本项目自己的 CI 就是靠它做门禁的。上面第一条命令**故意**返回 `1`，
 因为 `fixtures/bad-repo` 本来就是一个存在高危缺口的仓库。这里的非零退出码意思是
 "这个仓库有问题"，不是"工具坏了"。
 
-| 退出码 | `assess` | `verify` | `scaffold` |
-| --- | --- | --- | --- |
-| `0` | 达到 `--min-level`；没指定等级时表示没有高危缺口 | 所有命令都通过（dry-run 下：所有命令都已列入计划） | dry-run，或者 `--apply` 把计划的文件都写成功了 |
-| `1` | 没达到 `--min-level`，或存在高危缺口 | 有命令失败、超时，或被安全清单拦下 | 有文件没写成功，或模板缺失 |
-| `2` | 用法错误（参数或取值写错了） | 用法错误 | 用法错误 |
-| `3` | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 |
+| 退出码 | `assess` | `verify` | `scaffold` | `diff` |
+| --- | --- | --- | --- | --- |
+| `0` | 达到 `--min-level`；没指定等级时表示没有高危缺口 | 所有命令都通过（dry-run 下：所有命令都已列入计划） | dry-run，或者 `--apply` 把计划的文件都写成功了 | 比对成功，没有回归 |
+| `1` | 没达到 `--min-level`，或存在高危缺口 | 有命令失败、超时，或被安全清单拦下 | 有文件没写成功，或模板缺失 | 比对成功，但发现了回归（分数、等级，或某个子系统退步了） |
+| `2` | 用法错误（参数或取值写错了） | 用法错误 | 用法错误 | 用法错误（参数写错、文件读不到、JSON 解析失败、位置参数数量不对，或 `schemaVersion` 不一致） |
+| `3` | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 |
 
 `2` 和 `3` 是刻意分开的：参数敲错和工具自己崩了，对调用方脚本来说不能长得一模一样；
 这两者也都不该和 `1` 混淆——`1` 表示这次运行是成功的，只是它如实报告了你的仓库的真实状况。

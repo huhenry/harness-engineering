@@ -249,6 +249,22 @@ export const MESSAGES = {
     'scaffold.applyHint': 'This was a dry run — nothing above was actually written. Re-run with --apply to write these files.',
     'scaffold.failure': 'Failed to write {target}: {message}',
     'scaffold.writtenSoFar': 'Already written to disk before this failure (not rolled back): {list}',
+
+    // --- diff.mjs (task 2): CLI report copy ---
+    'severity.high': 'high',
+    'severity.medium': 'medium',
+    'severity.low': 'low',
+    'diff.title': 'Harness Diff Report',
+    'diff.score': 'Score: {before} → {after} ({delta})',
+    'diff.level': 'Level: L{before} → L{after} ({delta})',
+    'diff.regression': 'Regression detected: {reasons}',
+    'diff.subsystemsHeading': 'Subsystem Scores',
+    'diff.colSubsystem': 'Subsystem',
+    'diff.colScore': 'Before → After',
+    'diff.colDelta': 'Delta',
+    'diff.fixedHeading': 'Fixed',
+    'diff.introducedHeading': 'Introduced',
+    'diff.noGapChanges': 'No gap changes.',
   },
   zh: {
     'subsystem.instructions': '指令',
@@ -484,6 +500,22 @@ export const MESSAGES = {
     'scaffold.applyHint': '这是一次 dry-run —— 上面列出的内容都还没有真正写入。加上 --apply 才会真的写入这些文件。',
     'scaffold.failure': '写入 {target} 失败：{message}',
     'scaffold.writtenSoFar': '失败前已经真实写入磁盘的文件（不会回滚）：{list}',
+
+    // --- diff.mjs（task 2）：CLI 报告文案 ---
+    'severity.high': '高危',
+    'severity.medium': '中等',
+    'severity.low': '低',
+    'diff.title': 'Harness 对比报告',
+    'diff.score': '得分：{before} → {after}（{delta}）',
+    'diff.level': '等级：L{before} → L{after}（{delta}）',
+    'diff.regression': '检测到回归：{reasons}',
+    'diff.subsystemsHeading': '各子系统得分',
+    'diff.colSubsystem': '子系统',
+    'diff.colScore': '之前 → 之后',
+    'diff.colDelta': '变化',
+    'diff.fixedHeading': '已修复',
+    'diff.introducedHeading': '新引入',
+    'diff.noGapChanges': '差距无变化。',
   },
 };
 
