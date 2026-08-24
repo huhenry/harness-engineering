@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runAssess } from '../scripts/assess.mjs';
@@ -121,47 +122,89 @@ test('this repository still scores State 4 under the placeholder rule', () => {
   assert.equal(state.score, 4, `State dropped to ${state.score}: ${state.gaps.map((g) => g.id).join(', ')}`);
 });
 
-// Fix round 1 of 5 (task-2 review): the lint command --
-// `node --check scripts/*.mjs` -- is hand-copied into three files
+// Fix round 1 of 5 (task-2 review) found the lint command --
+// `node --check scripts/*.mjs` -- hand-copied into three files
 // (harness.config.json's verify.lint, Makefile's lint target, AGENTS.md's
-// Verification code block), and AGENTS.md states outright that these
-// commands are "declared verbatim in harness.config.json's verify block".
-// Nothing reconciled the three copies against each other or against the
-// real scripts/ directory, so adding scripts/diff.mjs landed in none of
-// them and `make lint` silently never syntax-checked the new CLI entry
-// point. The expectation here is DERIVED from disk (every top-level
-// scripts/*.mjs file, alphabetically) rather than a fourth hardcoded
-// filename sitting next to the first three -- the same class of
-// hand-synced-list defect scan.mjs's own PRUNE_DIRS/DEFAULT_IGNORE comment
-// and environment.mjs warn about elsewhere in this codebase. A future
-// scripts/*.mjs addition that nobody wires into all three copies fails
-// this test, rather than silently going unchecked by `make lint` again.
-test('the lint command names every scripts/*.mjs entry point, and its three copies never drift', () => {
+// Verification code block) and none of them updated when scripts/diff.mjs
+// shipped, so `make lint` silently never syntax-checked the new CLI entry
+// point. That fix derived the SCRIPT LIST from disk but still hardcoded the
+// SET OF PLACES to check to those same three files -- and fix round 2 found
+// two more real copies it missed entirely (clean-state-checklist.md,
+// evaluator-rubric.md), stale in exactly the same way, because the guard
+// was never told to look there. Same defect, one layer up.
+//
+// This version derives BOTH from ground truth instead of enumerating
+// either: the script list from `scripts/*.mjs` on disk, and the set of
+// places to check by scanning every file `git ls-files` reports as tracked
+// -- the same source of truth this repository actually ships from, so a
+// file that isn't tracked can't be a stale published copy of anything. A
+// future copy of this command in a new doc, template, or CI workflow gets
+// caught automatically; no one has to remember to add it to a list here.
+//
+// Two things that look like copies but are not get excluded:
+//
+//   1. `.claude/settings.json`'s `"Bash(node --check *)"` permission
+//      pattern -- a wildcard ALLOW rule, not a command this project claims
+//      to run. Excluded EXPLICITLY by path below, not left to fall out of
+//      the regex by accident (it also happens not to match, since `*` is
+//      not a real scripts/<name>.mjs path, but that's not what makes the
+//      exclusion correct -- it's a permission grammar this test has no
+//      business parsing at all, so it is skipped before any regex sees it).
+//   2. This file's own comment above and its two `node --check` regex
+//      literals below -- neither is followed by a real `scripts/<name>.mjs`
+//      path (the comment says the glob `scripts/*.mjs`; the regex source
+//      says `.+$`), so the extraction regex below does not match them. No
+//      special-case needed for this file.
+//
+// `evaluator-rubric.md`'s copy is a markdown inline code span soft-wrapped
+// across two source lines (`scripts/assess.mjs scripts/diff.mjs\n
+// scripts/scaffold.mjs ...`). CommonMark renders a soft line break as a
+// single space, so this reads identically to a reader (or a renderer) as
+// the single-line version in the other four files; matching after
+// collapsing whitespace follows that same rule instead of demanding every
+// doc keep this one command artificially unwrapped forever.
+test('every "node --check scripts/…" copy in this repository names every scripts/*.mjs entry point', () => {
   const scriptFiles = readdirSync(join(ROOT, 'scripts'), { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith('.mjs'))
     .map((e) => e.name)
     .sort();
   assert.ok(scriptFiles.length > 0, 'expected at least one scripts/*.mjs entry point on disk');
+  const expected = `node --check ${scriptFiles.map((n) => `scripts/${n}`).join(' ')}`;
 
-  const cfg = JSON.parse(readFileSync(join(ROOT, 'harness.config.json'), 'utf8'));
-  const configLint = cfg.verify.lint;
+  const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    // Explicit exclusion, not incidental: a permission pattern, not a copy
+    // of the command (see the comment above this test).
+    .filter((rel) => rel !== '.claude/settings.json');
 
-  const makefile = readFileSync(join(ROOT, 'Makefile'), 'utf8');
-  const makefileMatch = makefile.match(/^lint:\n\t(.+)$/m);
-  assert.ok(makefileMatch, 'Makefile must have a lint: target with a recipe line');
-  const makefileLint = makefileMatch[1];
+  // A real `scripts/<name>.mjs` path -- word characters, dots, hyphens
+  // only -- immediately (modulo whitespace) after `node --check`, one or
+  // more times. This is what rules out both a bare wildcard and a glob
+  // without needing to special-case either: `*` and `scripts/*.mjs` simply
+  // do not match `[\w.-]+\.mjs`.
+  const COMMAND_RE = /node --check((?: scripts\/[\w.-]+\.mjs)+)/g;
 
-  const agents = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8');
-  const agentsMatch = agents.match(/^node --check .+$/m);
-  assert.ok(agentsMatch, 'AGENTS.md must document the node --check lint command');
-  const agentsLint = agentsMatch[0];
+  const occurrences = [];
+  for (const rel of tracked) {
+    let raw;
+    try {
+      raw = readFileSync(join(ROOT, rel), 'utf8');
+    } catch {
+      continue; // not a regular readable text file -- can't hold a copy
+    }
+    const normalized = raw.replace(/\s+/g, ' ');
+    for (const m of normalized.matchAll(COMMAND_RE)) {
+      occurrences.push({ file: rel, command: `node --check${m[1]}` });
+    }
+  }
 
-  // All three copies must be the same command, byte for byte -- not just
-  // each individually "close enough". AGENTS.md's own prose promises this.
-  assert.equal(makefileLint, configLint, "Makefile's lint recipe must be byte-identical to harness.config.json's verify.lint");
-  assert.equal(agentsLint, configLint, "AGENTS.md's lint command must be byte-identical to harness.config.json's verify.lint");
+  // A guard that could vacuously pass by never matching anything is the
+  // same defect this milestone has already caught twice -- so the scan
+  // finding zero occurrences is itself a failure, not a silent skip.
+  assert.ok(occurrences.length > 0, 'expected to find at least one real "node --check scripts/…" copy in this repository');
 
-  for (const name of scriptFiles) {
-    assert.ok(configLint.includes(`scripts/${name}`), `the lint command is missing scripts/${name}`);
+  for (const { file, command } of occurrences) {
+    assert.equal(command, expected, `${file} has a stale or divergent copy of the lint command`);
   }
 });

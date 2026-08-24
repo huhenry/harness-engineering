@@ -13,8 +13,8 @@ iterations.
   it (not just claimed in prose).
 - `node --test` (no path argument, no directory, no glob) shows the same
   pass count as before the change plus any tests the change itself added --
-  never fewer. `node --check scripts/assess.mjs scripts/scaffold.mjs
-  scripts/verify.mjs` exits 0.
+  never fewer. `node --check scripts/assess.mjs scripts/diff.mjs
+  scripts/scaffold.mjs scripts/verify.mjs` exits 0.
 - If the change touches `references/rubric.md`, `references/failure-modes.md`,
   or any gap id / level gate / safety rule, `tests/docs.test.mjs` and
   `tests/rubric.test.mjs` still pass -- those are this repository's own
