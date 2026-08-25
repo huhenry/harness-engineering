@@ -60,15 +60,27 @@ should be able to trust it instead of re-deriving state from the diff.
   compatibility matrix, and added tests that prevent the runtime and CI coverage from silently
   drifting backwards. Fixture scores remain exactly 0/24 L0, 11/24 L2, and 16/24 L3; self-assessment
   remains 23/24 L5.
+- v1.2 publication review and live acceptance: fixed the Action's last stale `checkout@v4` recovery
+  example; made `contents: read` the CI default; isolated `contents: write` to the push-to-main badge
+  job; and made that job refresh the badge before propagating failed verification/assessment gates.
+  The self-hosting workflow now consumes and validates all six Action outputs. Because remote
+  `main` was still 25 commits behind local `main`, publication uses two reviewable Draft PRs instead
+  of one 32-commit change: PR #1 (`v1.1-hardening` → `main`) and stacked PR #2
+  (`v1.2-adoption-levers` → `v1.1-hardening`). Both are green. PR #2's first Action run created
+  comment `5404806581`; its second run validated `21 → 21 (0)`, L3 → L3, `regression=false`, and
+  updated that same comment. GitHub's API still reports exactly one marked comment.
 
 ## In Progress
 
-- v1.2 is complete on the `v1.2-adoption-levers` branch and is not merged into `main`. The next
-  planned milestone is v1.3, the explicit `assess --profile harness-distribution` profile described
-  in the external `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`.
-  No v1.3 product code has started.
+- v1.1 and v1.2 are complete, published as Draft PR #1 and stacked Draft PR #2, and not merged.
+  Review/merge order is PR #1 first, then retarget PR #2 to `main` before considering its merge.
+  The next planned product milestone is v1.3, the explicit
+  `assess --profile harness-distribution` profile described in the external
+  `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`. No v1.3 product code
+  has started.
 
 ## Blocked
 
-- Nothing currently. The PR-comment write path still needs its first real GitHub pull request for
-  live API acceptance; local tests intentionally do not open a network connection.
+- Nothing in code. Merging either Draft PR requires explicit human approval. The ordinary
+  same-repository comment create/update path is live-accepted; the warning-only 403 path still needs
+  a real fork PR if that optional external acceptance is desired.

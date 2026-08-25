@@ -3,45 +3,55 @@
 
 ## Previous session
 
-v1.2 adoption levers are complete on `v1.2-adoption-levers`; the branch is not merged into `main`.
-The milestone now has two public surfaces:
+v1.1 and v1.2 are complete and published as two unmerged Draft PRs:
 
-- `scripts/diff.mjs` compares two `assess --json` reports by stable ids. Its library validates the
-  score, level, and all six subsystem scores before arithmetic; its gap delta uses the complete gap
-  set, so a gap becoming suppressed is never reported as fixed. Markdown and JSON output, bilingual
-  rendering, schema refusal, `--out`, and the 0/1/2/3 exit-code contract are covered by unit and E2E
-  tests.
-- `action.yml` and `scripts/action.mjs` turn that comparison into a pull-request signal. The current
-  tree is assessed in place; the base tree is exported read-only with `git archive` into a temporary
-  directory. The Action writes logs, a job summary, and outputs on every run; when allowed, it edits
-  one hidden-marker PR comment instead of posting repeatedly. Fork/comment API failures warn without
-  failing the assessment, while `fail-on-regression: true` remains an explicit gate.
+- PR #1: https://github.com/huhenry/harness-engineering/pull/1,
+  `v1.1-hardening` → `main`. Remote `main` was still at `f15c6c5`, 25 commits behind local `main`, so
+  the completed v1.1 work was published on a branch rather than pushed directly to `main`.
+- PR #2: https://github.com/huhenry/harness-engineering/pull/2,
+  `v1.2-adoption-levers` → `v1.1-hardening`. This stacked base keeps v1.2's diff CLI and GitHub Action
+  review separate from PR #1. It must be retargeted to `main` after PR #1 merges and before PR #2 is
+  considered for merge.
 
-The closeout review found one current-platform defect that local unit tests could not reveal:
-GitHub retired the Node 20 JavaScript Action runtime in 2026 and moved Actions to Node 24. The Action
-now declares `node24`; both bundled workflows use the current official Action majors; CI covers Node
-20, 22, and 24 while the package's declared compatibility floor remains `>=20`. The README examples
-no longer include a redundant `setup-node` step for the JavaScript Action.
+The publication review found and fixed three issues before the Draft PRs were treated as ready:
 
-Current measured baselines are unchanged:
+- `baseExportError` still told users to copy `actions/checkout@v4` after the rest of the product had
+  moved to v7. Its recovery example now says v7 and a regression test prevents drift.
+- `.github/workflows/ci.yml` granted `contents: write` at workflow scope, exposing a write token to
+  same-repository PR test code. Read is now the default; only a push-to-main `refresh-badge` job gets
+  write. That job runs with `always()`, records failed verify/assess outcomes, refreshes the badge
+  from the fresh evidence, then restores the failure status.
+- The Action declared six outputs but the self-hosting workflow never consumed them. The workflow
+  now gives the Action step an id and validates that every output is present, typed, and
+  arithmetically coherent on a real runner.
 
-- `fixtures/bad-repo`: 0/24, L0
-- `fixtures/mid-repo`: 11/24, L2
-- `fixtures/good-repo`: 16/24, L3
-- this repository with fresh verify evidence: 23/24, L5
+Live acceptance evidence on PR #2:
 
-The full test suite has 585 tests. In the restricted workspace sandbox, the two process-group cleanup
-tests fail only because macOS `pgrep` cannot access the process table; with process-table access, the
-full suite passes 585/585 under both this checkout's Node 22.23.0 and the Action runtime's installed
-Node 24.11.1.
+- First harness-diff run `32806355527` created comment id `5404806581`.
+- Second run `32806550817` logged `Updated the existing harness comment (id 5404806581)` and the API
+  still returned exactly one comment carrying `<!-- harness-engineering-diff -->`; its `created_at`
+  stayed `2026-08-25T03:45:25Z` while `updated_at` moved to `2026-08-25T03:48:36Z`.
+- The real output consumer passed with score `21 → 21 (0)`, level `3 → 3`, and
+  `regression=false`. L3/21 is expected in a clean PR checkout: neither side has the gitignored
+  `.harness/verify-report.json`, so the comparison is symmetric and evidence-free.
+- The diff job's runner log proved its effective token permissions were `Contents: read` and
+  `PullRequests: write`; it emitted no job-summary file-command warning. All PR #1 and PR #2 checks
+  passed, including PR #2's Node 20/22/24 matrix and self-assessment.
+
+Local verification after the publication fixes: Node 22.23.0 and Node 24.11.1 both pass 587/587
+tests, the declared syntax command passes, `verify --run` passes bootstrap/test/lint, fixture scores
+remain 0/24 L0, 11/24 L2, and 16/24 L3, and the fresh self-assessment remains 23/24 L5. The v1.1
+snapshot was also independently checked in a Git-backed isolated export: 519/519 and its own
+bootstrap/test/lint evidence all passed.
 
 ## Next session
 
-1. Review the complete `main...v1.2-adoption-levers` diff and open a Draft PR if publication is
-   desired. Do not merge without explicit human approval.
-2. Use that real PR as the first live acceptance of comment create/update behavior. Confirm the job
-   summary, outputs, single-comment idempotency, and the expected warning-only behavior for a fork PR.
-3. After v1.2 is accepted, write a task-level implementation plan for v1.3 before changing product
+1. Review and merge PR #1 only with explicit human approval.
+2. After PR #1 merges, retarget PR #2 from `v1.1-hardening` to `main`, let checks rerun, and review it.
+   Do not merge PR #2 without separate explicit approval.
+3. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
+   not use `pull_request_target` as a workaround; the job summary remains the safe fallback.
+4. After v1.2 is accepted, write a task-level implementation plan for v1.3 before changing product
    code. The locked scope is the explicit `assess --profile harness-distribution` profile in
    `../harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`: recognize
    `skills/**/SKILL.md`, `agents/*.md`, and `workflows/*`, but only improve gap accuracy, never score.
@@ -62,4 +72,5 @@ Keep these deferred facts visible:
 
 ## Blocked
 
-Nothing in code. Live comment acceptance and merging require an explicit external PR/review decision.
+Nothing in code. Both PRs are intentionally Draft; merge and retarget decisions require explicit
+human approval. The fork-only warning path needs a real fork PR for live acceptance.
