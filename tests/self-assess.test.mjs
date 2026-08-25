@@ -88,6 +88,29 @@ test('CI covers the supported Node range through 24 on current official actions'
   assert.match(ci, /actions\/setup-node@v7/);
 });
 
+test('CI confines contents: write to the push-only badge job and refreshes after failed checks', () => {
+  const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const writes = ci.match(/contents:\s*write/g) ?? [];
+  assert.equal(writes.length, 1, 'exactly one job may receive contents: write');
+  assert.match(ci, /^permissions:\n  contents: read$/m, 'the workflow default must be read-only');
+
+  const badgeStart = ci.indexOf('\n  refresh-badge:');
+  assert.notEqual(badgeStart, -1, 'expected a dedicated refresh-badge job');
+  const beforeBadge = ci.slice(0, badgeStart);
+  const badge = ci.slice(badgeStart);
+  assert.doesNotMatch(beforeBadge, /contents:\s*write/, 'PR-facing jobs must never receive a write token');
+  assert.match(badge, /if:\s*always\(\).*github\.event_name == 'push'.*refs\/heads\/main/);
+  assert.match(badge, /permissions:\n      contents: write/);
+  assert.match(badge, /id: verify[\s\S]*?continue-on-error: true/);
+  assert.match(badge, /id: assess[\s\S]*?continue-on-error: true/);
+  assert.match(badge, /name: Refresh badge\n        if: always\(\)/);
+  assert.match(
+    badge,
+    /if: steps\.verify\.outcome == 'failure' \|\| steps\.assess\.outcome == 'failure'/,
+    'badge refresh must finish before the job propagates either failed gate',
+  );
+});
+
 // Not part of the raw plan's own Step-1 skeleton; added because task-24-
 // brief.md's own acceptance bar (requirement 2 in the controller's dispatch
 // message) is "no `FILL:` string may remain anywhere" once this task is

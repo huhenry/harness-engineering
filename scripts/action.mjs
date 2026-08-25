@@ -227,7 +227,7 @@ export function baseExportError(baseRef, status, stderr) {
     'commit is not in .git at all, so there is nothing to compare against.',
     'Set fetch-depth: 0 on the checkout step that feeds this action:',
     '',
-    '    - uses: actions/checkout@v4',
+    '    - uses: actions/checkout@v7',
     '      with:',
     '        fetch-depth: 0',
     '',

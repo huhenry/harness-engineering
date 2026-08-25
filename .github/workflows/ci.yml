@@ -3,14 +3,11 @@ on:
   push: { branches: [main] }
   pull_request:
 
-# The self-assess job's badge-refresh step commits and pushes
-# harness-badge.json back to main. GitHub's default GITHUB_TOKEN for a
-# newly created repository is read-only, and without this the push fails
-# with 403 -- leaving main's own CI permanently red on the exact task whose
-# entire point is proving this repository's CI is green. See
-# task-24-brief.md section B2.
+# Read-only is the safe default for every PR-facing job. The one job that
+# pushes harness-badge.json overrides this below, and only exists on a push
+# to main -- untrusted pull-request code must never receive a write token.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -27,6 +24,7 @@ jobs:
       - run: node --test
 
   self-assess:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -45,16 +43,35 @@ jobs:
         run: node scripts/verify.mjs . --run
       - name: Assess ourselves
         run: node scripts/assess.mjs . --min-level 4 --out self-report.md
+
+  refresh-badge:
+    # A failed dependency normally skips this job. `always()` is essential:
+    # the badge must be recomputed from a fresh failed verify report when the
+    # test or assessment gate breaks, not keep advertising yesterday's level.
+    # The event/ref clauses keep the write token completely out of PR runs.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [test, self-assess]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      # Both gates continue long enough for Refresh badge to consume the
+      # fresh evidence, then the final step restores their failure status.
+      - name: Verify our own declared checks
+        id: verify
+        continue-on-error: true
+        run: node scripts/verify.mjs . --run
+      - name: Assess ourselves
+        id: assess
+        continue-on-error: true
+        run: node scripts/assess.mjs . --min-level 4 --out self-report.md
       - name: Refresh badge
-        # always(): the badge must stay honest even when "Assess ourselves"
-        # fails the --min-level 4 gate (or "Verify our own declared checks"
-        # fails first) -- verify.mjs still writes .harness/verify-report.json
-        # on a failing run, so a fresh `assess --json` here can read real,
-        # current evidence either way. Refreshing only on success would let
-        # the badge keep claiming a level this repository no longer holds,
-        # which is exactly the dishonest-signal failure mode this project
-        # exists to prevent.
-        if: always() && github.ref == 'refs/heads/main'
+        if: always()
         run: |
           node scripts/assess.mjs . --json > "$RUNNER_TEMP/report.json"
           node -e '
@@ -80,3 +97,6 @@ jobs:
             git commit -m "chore: refresh harness badge [skip ci]"
             git push
           fi
+      - name: Propagate verification or assessment failure
+        if: steps.verify.outcome == 'failure' || steps.assess.outcome == 'failure'
+        run: exit 1

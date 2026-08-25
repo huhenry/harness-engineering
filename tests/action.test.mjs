@@ -295,7 +295,8 @@ test('the base-export failure message names fetch-depth: 0', () => {
   const msg = baseExportError('deadbeef', 128, "fatal: not a valid object name: deadbeef");
   assert.match(msg, /fetch-depth: 0/);
   assert.match(msg, /deadbeef/, 'the message must name the ref it could not resolve');
-  assert.match(msg, /actions\/checkout/);
+  assert.match(msg, /actions\/checkout@v7/);
+  assert.doesNotMatch(msg, /actions\/checkout@v4/, 'the remediation must not revive the retired example');
 });
 
 test('a base-ref that is not in .git stops the action with the fetch-depth advice', () => {
