@@ -19,6 +19,25 @@ test('action metadata uses the current Node 24 JavaScript-action runtime', () =>
   assert.doesNotMatch(yml, /using:\s*['"]node20['"]/, 'the retired Node 20 action runtime must not return');
 });
 
+test('the self-hosting workflow consumes every declared Action output', () => {
+  const action = readFileSync(join(ROOT, 'action.yml'), 'utf8');
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'harness-diff.yml'), 'utf8');
+  const block = action.slice(action.indexOf('\noutputs:'), action.indexOf('\nruns:'));
+  const outputs = [...block.matchAll(/^ {2}([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(outputs, [
+    'level-after', 'level-before', 'regression', 'score-after', 'score-before', 'score-delta',
+  ]);
+  assert.match(workflow, /name: Harness score delta\n        id: harness\n/);
+  for (const name of outputs) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      workflow,
+      new RegExp(`steps\\.harness\\.outputs\\[['"]${escaped}['"]\\]`),
+      `workflow never consumes the '${name}' output`,
+    );
+  }
+});
+
 /**
  * A minimal report shaped like `assess --json`'s real output, mirroring the
  * helper tests/diff.test.mjs already uses. Gap ids must be REAL rubric ids:

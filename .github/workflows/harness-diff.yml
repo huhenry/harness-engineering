@@ -44,6 +44,7 @@ jobs:
       # improvement nobody made. The action warns when it detects that
       # asymmetry; this ordering means it never has to.
       - name: Harness score delta
+        id: harness
         uses: ./
         with:
           # This repository holds itself to the gate it does not impose on
@@ -56,3 +57,33 @@ jobs:
           lang: 'en'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A declared output is not evidence until a real workflow consumes it.
+      # Keep this generic: the repository's score may legitimately move, but
+      # the six values must remain present, typed, and arithmetically coherent.
+      - name: Validate Action outputs
+        env:
+          SCORE_BEFORE: "${{ steps.harness.outputs['score-before'] }}"
+          SCORE_AFTER: "${{ steps.harness.outputs['score-after'] }}"
+          SCORE_DELTA: "${{ steps.harness.outputs['score-delta'] }}"
+          LEVEL_BEFORE: "${{ steps.harness.outputs['level-before'] }}"
+          LEVEL_AFTER: "${{ steps.harness.outputs['level-after'] }}"
+          REGRESSION: "${{ steps.harness.outputs['regression'] }}"
+        run: |
+          node -e '
+            const names = ["SCORE_BEFORE", "SCORE_AFTER", "SCORE_DELTA", "LEVEL_BEFORE", "LEVEL_AFTER"];
+            for (const name of names) {
+              if (!/^[+-]?\d+$/.test(process.env[name] || "")) {
+                throw new Error(`${name} is missing or is not an integer: ${JSON.stringify(process.env[name])}`);
+              }
+            }
+            const before = Number(process.env.SCORE_BEFORE);
+            const after = Number(process.env.SCORE_AFTER);
+            const delta = Number(process.env.SCORE_DELTA);
+            const levelBefore = Number(process.env.LEVEL_BEFORE);
+            const levelAfter = Number(process.env.LEVEL_AFTER);
+            if (after - before !== delta) throw new Error(`score delta is inconsistent: ${before} -> ${after}, got ${delta}`);
+            if (![levelBefore, levelAfter].every((n) => n >= 0 && n <= 5)) throw new Error("level output is outside 0..5");
+            if (!["true", "false"].includes(process.env.REGRESSION)) throw new Error("regression output is not boolean text");
+            console.log(`validated outputs: score ${before} -> ${after} (${process.env.SCORE_DELTA}), level ${levelBefore} -> ${levelAfter}, regression=${process.env.REGRESSION}`);
+          '
