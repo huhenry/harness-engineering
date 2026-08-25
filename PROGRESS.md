@@ -45,14 +45,30 @@ should be able to trust it instead of re-deriving state from the diff.
   autonomous loop but never wires it up keeps its stop-condition and budget-cap gaps instead of
   losing them to a suppression meant for repositories with no loop at all. Gap ids 38 → 39; no
   score moved.
+- v1.2 adoption levers: added the pure, id-based `computeDiff` engine and the bilingual
+  `scripts/diff.mjs` CLI. It compares full gap sets including suppressed gaps, validates both input
+  reports before doing arithmetic, emits Markdown or JSON, and returns exit 1 for a real total,
+  level, or subsystem regression while keeping usage errors and tool failures distinct.
+- v1.2 GitHub Action: added root `action.yml`, `scripts/action.mjs`, and the self-hosting
+  `.github/workflows/harness-diff.yml`. The Action assesses the current tree and a read-only
+  `git archive` of the base ref, publishes the same diff to logs/job summary, updates one marked PR
+  comment in place, treats comment failures as warnings, and gates only when
+  `fail-on-regression: true`. Its inputs, outputs, `fetch-depth: 0` requirement, fork limitation,
+  evidence asymmetry, and supply-chain pinning caveat are documented in both READMEs.
+- v1.2 closeout review: migrated the JavaScript Action from the retired `node20` runtime to
+  `node24`, moved the bundled workflows to the current official Action majors, added Node 24 to the
+  compatibility matrix, and added tests that prevent the runtime and CI coverage from silently
+  drifting backwards. Fixture scores remain exactly 0/24 L0, 11/24 L2, and 16/24 L3; self-assessment
+  remains 23/24 L5.
 
 ## In Progress
 
-- v1.1 hardening sits on the `v1.1-hardening` branch, reviewed and fixed, waiting to be merged
-  into `main`. Nothing else is in flight: the "Beyond v1.1" items in `ROADMAP.md` (`harness diff`,
-  the GitHub Action, more stack detectors, graph engineering, a web dashboard) are directions, and
-  none of them is started.
+- v1.2 is complete on the `v1.2-adoption-levers` branch and is not merged into `main`. The next
+  planned milestone is v1.3, the explicit `assess --profile harness-distribution` profile described
+  in the external `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`.
+  No v1.3 product code has started.
 
 ## Blocked
 
-- Nothing currently.
+- Nothing currently. The PR-comment write path still needs its first real GitHub pull request for
+  live API acceptance; local tests intentionally do not open a network connection.

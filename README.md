@@ -207,11 +207,9 @@ jobs:
   diff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0            # required — see below
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
       - uses: huhenry/harness-engineering@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -221,9 +219,11 @@ jobs:
 branch is a supply-chain risk you should not accept as a habit — pin to a tag or a commit sha as
 soon as there is one to pin to.
 
-Zero dependencies here too: no `@actions/core`, no `@actions/github`, no bundle, no build step.
-The runner executes the committed `scripts/action.mjs` directly, so the code you can read in this
-repository is exactly the code that runs on your pull request.
+Zero dependencies here too: no `@actions/core`, no `@actions/github`, no bundle, no build step,
+and no `setup-node` step. `action.yml` selects GitHub's `node24` JavaScript-action runtime and the
+runner executes the committed `scripts/action.mjs` directly, so the code you can read in this
+repository is exactly the code that runs on your pull request. Self-hosted runners must be new
+enough to support Node 24 actions.
 
 | Input | Default | What it does |
 | --- | --- | --- |

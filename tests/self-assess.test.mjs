@@ -81,6 +81,13 @@ test('the CI workflow gates on min-level 4 and skips its own commits', () => {
   assert.match(ci, /22/);
 });
 
+test('CI covers the supported Node range through 24 on current official actions', () => {
+  const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  assert.match(ci, /node-version:\s*\[['"]20['"],\s*['"]22['"],\s*['"]24['"]\]/);
+  assert.match(ci, /actions\/checkout@v7/);
+  assert.match(ci, /actions\/setup-node@v7/);
+});
+
 // Not part of the raw plan's own Step-1 skeleton; added because task-24-
 // brief.md's own acceptance bar (requirement 2 in the controller's dispatch
 // message) is "no `FILL:` string may remain anywhere" once this task is

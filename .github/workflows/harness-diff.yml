@@ -29,14 +29,12 @@ jobs:
   diff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Required. The default depth of 1 does not fetch the base commit,
           # so `git archive <base-sha>` has nothing to export and the action
           # stops with an error pointing right back at this line.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
 
       # Deliberately the first thing that runs after checkout, and in
       # particular BEFORE anything that could run `verify --run`. That

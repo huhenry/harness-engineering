@@ -13,6 +13,12 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+test('action metadata uses the current Node 24 JavaScript-action runtime', () => {
+  const yml = readFileSync(join(ROOT, 'action.yml'), 'utf8');
+  assert.match(yml, /using:\s*['"]node24['"]/);
+  assert.doesNotMatch(yml, /using:\s*['"]node20['"]/, 'the retired Node 20 action runtime must not return');
+});
+
 /**
  * A minimal report shaped like `assess --json`'s real output, mirroring the
  * helper tests/diff.test.mjs already uses. Gap ids must be REAL rubric ids:

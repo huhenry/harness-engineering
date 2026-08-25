@@ -5,7 +5,7 @@
  *
  * Zero dependencies, like everything else here. No `@actions/core`, no
  * `@actions/github`, no bundler: inputs come from the `INPUT_*` environment
- * variables the runner sets, HTTP goes through Node 20's built-in `fetch`,
+ * variables the runner sets, HTTP goes through Node 24's built-in `fetch`,
  * and step outputs/summaries are written with the documented file-command
  * protocol. The runner executes this committed file directly, so what is
  * reviewed in this repository is exactly what runs.

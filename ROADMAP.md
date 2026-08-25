@@ -90,7 +90,7 @@ v1.2 and is struck through below. The rest are not started.
 - ~~**A GitHub Action.** A marketplace action that comments the harness score delta on a pull
   request, turning the assessment into a review-time signal instead of something someone remembers
   to run.~~ **Shipped in v1.2.** `action.yml` at the repository root, running the committed
-  `scripts/action.mjs` on `node20` with no dependencies and no build step; this repository runs it
+  `scripts/action.mjs` on `node24` with no dependencies and no build step; this repository runs it
   against its own pull requests in `.github/workflows/harness-diff.yml`. See the README's Action
   section for inputs, the `fetch-depth: 0` requirement, and the fork limitation. What is
   deliberately *not* done: publishing a Marketplace listing, which needs a release tag this

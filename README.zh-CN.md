@@ -199,11 +199,9 @@ jobs:
   diff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0            # 必须——原因见下
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
       - uses: huhenry/harness-engineering@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -212,9 +210,10 @@ jobs:
 这里写 `@main`，是因为本仓库还没有发布任何 tag。把第三方 Action 钉在一个会移动的分支上是一种
 供应链风险，不该养成习惯——一旦有了 tag 或 commit sha，就钉到那上面去。
 
-零依赖同样贯彻到 Action 里：不引 `@actions/core`、不引 `@actions/github`、不打包、没有构建步骤。
-runner 直接执行仓库里那份 `scripts/action.mjs`，所以你在这个仓库里能读到的代码，就是在你的 PR
-上真正跑的代码。
+零依赖同样贯彻到 Action 里：不引 `@actions/core`、不引 `@actions/github`、不打包、没有构建步骤，
+也不需要 `setup-node`。`action.yml` 选择 GitHub 的 `node24` JavaScript Action runtime，runner 直接
+执行仓库里那份 `scripts/action.mjs`，所以你在这个仓库里能读到的代码，就是在你的 PR 上真正跑的
+代码。自托管 runner 必须足够新，能够支持 Node 24 Action。
 
 | Input | 默认值 | 作用 |
 | --- | --- | --- |

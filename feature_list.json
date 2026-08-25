@@ -29,6 +29,11 @@
     { "id": "handoff-unfilled-gap", "title": "New gap id state.handoff-unfilled distinguishing a missing handoff doc from one that exists but was never filled in", "status": "done" },
     { "id": "gap-suppression", "title": "Render-time suppression of a gap that presupposes a file another gap already reports as missing (e.g. state.progress-stale alongside state.no-progress)", "status": "done" },
     { "id": "max-score-constant", "title": "Single-source MAX_SCORE constant in rubric.mjs, collapsing eight hand-written top-rung 4 literals across report.mjs (twice) and the six scorers", "status": "done" },
-    { "id": "install-path-substitution", "title": "install.sh substitutes this checkout's absolute path into installed SKILL.md files, scoped to skills actually copied from the source so a pre-existing third-party skill is never rewritten", "status": "done" }
+    { "id": "install-path-substitution", "title": "install.sh substitutes this checkout's absolute path into installed SKILL.md files, scoped to skills actually copied from the source so a pre-existing third-party skill is never rewritten", "status": "done" },
+    { "id": "assessment-diff-engine", "title": "Pure id-based comparison of two schema-valid assess reports, including suppressed gaps and per-subsystem regression reasons", "status": "done" },
+    { "id": "diff-cli", "title": "Bilingual harness diff CLI with Markdown/JSON output, file output, schema refusal, and distinct regression/usage/tool exit codes", "status": "done" },
+    { "id": "lint-entrypoint-sync-guard", "title": "Repository-wide guard derives every node --check scripts entrypoint copy from tracked files and the real scripts directory", "status": "done" },
+    { "id": "github-action-pr-diff", "title": "Zero-dependency GitHub Action assesses base and current trees, writes a job summary, updates one PR comment, and optionally gates regressions", "status": "done" },
+    { "id": "github-action-node24", "title": "GitHub Action runtime and bundled official Actions migrated to Node 24, with Node 24 added to CI compatibility coverage", "status": "done" }
   ]
 }

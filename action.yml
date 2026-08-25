@@ -77,5 +77,5 @@ outputs:
       its default.
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'scripts/action.mjs'
