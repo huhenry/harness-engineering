@@ -282,8 +282,22 @@ test('assess never writes to the target repository, at the content level', (t) =
   const before = hashTree(repo);
   run([repo, '--json'], ROOT);
   run([repo], ROOT); // markdown mode too — both output paths must stay read-only
+  run([repo, '--profile', 'harness-distribution'], ROOT);
   const after = hashTree(repo);
   assert.equal(before, after);
+});
+
+test('the albert-shaped distribution remains failing because nested harness text is not root self-proof', (t) => {
+  const repo = copyFixture(t, 'albert-shaped');
+  const result = run([repo, '--json', '--profile', 'harness-distribution'], ROOT);
+  assert.equal(result.code, 1);
+  const report = JSON.parse(result.out);
+  assert.equal(report.profile, 'harness-distribution');
+  const ids = report.subsystems.flatMap((s) => s.gaps.map((g) => g.id));
+  assert.ok(ids.includes('instructions.missing'));
+  assert.ok(ids.includes('tools.no-entrypoint'));
+  assert.ok(ids.includes('feedback.no-tests'));
+  assert.ok(ids.includes('feedback.no-ci'));
 });
 
 // --- robustness: the `import.meta.url` file-identity check must not be

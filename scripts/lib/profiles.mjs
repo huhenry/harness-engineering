@@ -38,10 +38,15 @@ export function discoverHarnessDistribution(ctx) {
   const workflowFiles = uniqueSorted(ctx.list(WORKFLOW_GLOBS).filter((path) => !isGitHubWorkflow(path)));
   const files = uniqueSorted([...skillFiles, ...agentFiles, ...workflowFiles]);
   const readable = files.map((path) => ({ path, text: ctx.read(path) })).filter((item) => item.text !== null);
+  const readableFiles = readable.map((item) => item.path);
+  const readableSet = new Set(readableFiles);
   return {
     skillFiles,
     agentFiles,
     workflowFiles,
+    readableFiles,
+    readableAgentFiles: agentFiles.filter((path) => readableSet.has(path)),
+    readableWorkflowFiles: workflowFiles.filter((path) => readableSet.has(path)),
     text: readable.map((item) => item.text).join('\n'),
   };
 }
@@ -56,10 +61,14 @@ function hasRolePair(ctx, agentFiles) {
 }
 
 function distributionEvidence(distribution) {
+  const readable = new Set(distribution.readableFiles);
   return [
-    ...distribution.skillFiles.map((path) => ({ kind: 'file', path, note: 'harness distribution skill' })),
-    ...distribution.agentFiles.map((path) => ({ kind: 'file', path, note: 'harness distribution agent role' })),
-    ...distribution.workflowFiles.map((path) => ({ kind: 'file', path, note: 'harness distribution workflow definition' })),
+    ...distribution.skillFiles.filter((path) => readable.has(path))
+      .map((path) => ({ kind: 'file', path, note: 'harness distribution skill' })),
+    ...distribution.agentFiles.filter((path) => readable.has(path))
+      .map((path) => ({ kind: 'file', path, note: 'harness distribution agent role' })),
+    ...distribution.workflowFiles.filter((path) => readable.has(path))
+      .map((path) => ({ kind: 'file', path, note: 'harness distribution workflow definition' })),
   ];
 }
 
@@ -72,10 +81,10 @@ export function profileOverlay({ profile, ctx }) {
 
   const distribution = discoverHarnessDistribution(ctx);
   const facts = analyzeLoopText(distribution.text);
-  const makerChecker = facts.hasMakerChecker || hasRolePair(ctx, distribution.agentFiles);
+  const makerChecker = facts.hasMakerChecker || hasRolePair(ctx, distribution.readableAgentFiles);
   const resolvedGapIds = [];
   if (facts.hasKeyword) resolvedGapIds.push('loop.none');
-  if (distribution.workflowFiles.length > 0) resolvedGapIds.push('loop.no-entrypoint');
+  if (distribution.readableWorkflowFiles.length > 0) resolvedGapIds.push('loop.no-entrypoint');
   if (facts.hasStopCondition) resolvedGapIds.push('loop.no-stop-condition');
   if (facts.hasBudgetCap) resolvedGapIds.push('loop.no-budget-cap');
   if (makerChecker) resolvedGapIds.push('loop.no-maker-checker');

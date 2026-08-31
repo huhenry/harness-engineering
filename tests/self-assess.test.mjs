@@ -25,6 +25,19 @@ test('this repository reaches at least L3 regardless of verify evidence', () => 
   assert.ok(r.level.id >= 3, `self level is ${r.level.id}: ${r.level.unmetGates.join(', ')}`);
 });
 
+test('the harness-distribution profile cannot increase this repository score or level', () => {
+  const ordinary = runAssess({ repoPath: ROOT, lang: 'en', profile: 'repository', now: new Date() });
+  const distribution = runAssess({
+    repoPath: ROOT, lang: 'en', profile: 'harness-distribution', now: new Date(),
+  });
+  assert.deepEqual(
+    distribution.subsystems.map((s) => [s.id, s.score]),
+    ordinary.subsystems.map((s) => [s.id, s.score]),
+  );
+  assert.equal(distribution.score.total, ordinary.score.total);
+  assert.equal(distribution.level.id, ordinary.level.id);
+});
+
 // Brief section G invites reporting further plan defects found beyond B1-B4.
 // task-24-brief-raw.md's own Step-1 skeleton asserted
 // `r.level.unmetGates` deepEquals `['verify evidence']` alone whenever

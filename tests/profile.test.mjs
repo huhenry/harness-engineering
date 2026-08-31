@@ -103,6 +103,25 @@ test('distribution evidence resolves only facts its files actually contain', () 
   assert.ok(overlay.loop.evidence.every((item) => !/executed|passed/i.test(item.note)));
 });
 
+test('discovered but unreadable files neither resolve facts nor become evidence', () => {
+  const files = {
+    'harness/skills/coordinator/SKILL.md': 'Autonomous loop.',
+    'harness/agents/task-worker.md': 'The worker produces a candidate.',
+    'harness/agents/task-verifier.md': null,
+    'harness/workflows/chunk-exec.js': null,
+  };
+  const found = discoverHarnessDistribution(context(files));
+  assert.deepEqual(found.readableFiles, [
+    'harness/agents/task-worker.md',
+    'harness/skills/coordinator/SKILL.md',
+  ]);
+
+  const overlay = profileOverlay({ profile: 'harness-distribution', ctx: context(files) });
+  assert.ok(!overlay.loop.resolvedGapIds.includes('loop.no-entrypoint'));
+  assert.ok(!overlay.loop.resolvedGapIds.includes('loop.no-maker-checker'));
+  assert.ok(overlay.loop.evidence.every((item) => files[item.path] !== null));
+});
+
 test('a skill is not an entrypoint, and a lone worker is not maker-checker separation', () => {
   const overlay = profileOverlay({
     profile: 'harness-distribution',
