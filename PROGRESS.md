@@ -102,13 +102,15 @@ should be able to trust it instead of re-deriving state from the diff.
   passed; `node scripts/verify.mjs . --run` passed bootstrap/test/lint and wrote fresh evidence.
   Self-assessment is 23/24 L5 under both profiles with identical subsystem scores, package-lock
   still contains only the root package, and a real cross-profile diff exits 2.
+- v1.3 Draft PR acceptance: pushed `v1.3-harness-distribution-profile` and opened Draft PR #3.
+  On head `a76197f`, CI run `33352213563` passed Node 20/22/24 and self-assessment; harness-diff run
+  `33352213571` passed with 21 -> 21, L3 -> L3, no gap changes, and created one marked comment
+  (`5473123248`). GitHub reports the Draft PR CLEAN and MERGEABLE.
 
 ## In Progress
 
-- v1.3 product work is complete and locally validated on
-  `v1.3-harness-distribution-profile`. Remaining release work is to push the branch, open a Draft
-  PR, and observe the real Node 20/22/24 and self-hosting Action checks. Merging still requires a
-  separate explicit approval.
+- v1.3 product work is complete and locally plus remotely validated on Draft PR #3. It remains a
+  Draft for review; marking Ready or merging still requires a separate explicit approval.
 
 ## Blocked
 

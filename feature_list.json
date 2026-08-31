@@ -42,6 +42,7 @@
     { "id": "v1.3-profile-contract", "title": "Explicit repository and harness-distribution profile contract shared by assess reports and diff", "status": "done" },
     { "id": "v1.3-distribution-loop-overlay", "title": "Readable skill agent and workflow discovery with score-neutral Loop diagnostic overlay", "status": "done" },
     { "id": "v1.3-cross-profile-refusal", "title": "Legacy repository normalization and usage-error refusal for cross-profile diffs", "status": "done" },
-    { "id": "v1.3-clean-room-fixture", "title": "Independently authored albert-shaped fixture proving distributed recognition without root proof or score movement", "status": "done" }
+    { "id": "v1.3-clean-room-fixture", "title": "Independently authored albert-shaped fixture proving distributed recognition without root proof or score movement", "status": "done" },
+    { "id": "v1.3-draft-pr-acceptance", "title": "Draft PR remote acceptance across Node 20 22 24 self-assessment and one stable harness-diff comment", "status": "done" }
   ]
 }

@@ -7,7 +7,8 @@ v1.2 is complete on `main`. PR #2 was marked Ready and merged after separate exp
 `5cbcc226d73cc02ef58cb399b1a73c9cf2085868`; post-merge CI run `33350551289` passed Node 20/22/24
 and the push-only badge refresh. Main's lifecycle closeout is `f62c173`.
 
-v1.3 is implemented on `v1.3-harness-distribution-profile` in four reviewable commits:
+v1.3 is implemented on `v1.3-harness-distribution-profile` in five reviewable product and lifecycle
+commits:
 
 - `a1132d7` adds the canonical `repository` / `harness-distribution` profile contract, report field,
   CLI option, legacy-report normalization, and cross-profile diff refusal.
@@ -17,6 +18,7 @@ v1.3 is implemented on `v1.3-harness-distribution-profile` in four reviewable co
   CLI coverage, score invariants, and the rule that unreadable files produce no fact or evidence.
 - `2cac399` documents the profile and its non-goals in both READMEs, rubric references, and roadmaps,
   with a documentation contract test.
+- `a76197f` records the completed implementation, local evidence, feature status, and handoff.
 
 The locked external plan remains at
 `../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`. v1.3 does not
@@ -34,14 +36,23 @@ Local acceptance on Node 22.23.0:
   none, while root-level gaps remain.
 - Cross-profile diff: refused with exit 2. `package-lock.json`: root package only, no dependencies.
 
+Remote acceptance on Draft PR #3 (https://github.com/huhenry/harness-engineering/pull/3), head
+`a76197fde55b84445887d2efc86cba00c49349aa`:
+
+- CI run `33352213563`: Node 20, 22, and 24 plus self-assessment all passed; the push-only
+  `refresh-badge` job was correctly skipped for the PR event.
+- harness-diff run `33352213571`: passed with 21 -> 21, L3 -> L3, and no gap changes.
+- The Action created exactly one marked comment, id `5473123248`; GitHub reported the PR CLEAN and
+  MERGEABLE. The next lifecycle-only push should update this comment in place, not add a second one.
+
 ## Next session
 
-1. Push `v1.3-harness-distribution-profile`, open a Draft PR against `main`, and record the PR URL
-   and real remote check run ids here after they finish.
-2. Recheck the PR head, mergeability, all Node 20/22/24 jobs, self-assessment, and the Action's one
-   marked comment before presenting it for review.
-3. Do not mark Ready or merge without a separate explicit user approval. A release tag and
-   Marketplace publication remain separate decisions.
+1. Review Draft PR #3 and refresh its head, mergeability, checks, and marked-comment count before
+   any release action.
+2. Do not mark Ready or merge without a separate explicit user approval. If approval arrives,
+   repeat the same fresh remote-state check immediately before either action.
+3. A release tag and Marketplace publication remain separate decisions; do not infer them from
+   merge approval.
 
 Keep these boundaries visible: `harness-distribution` changes diagnostics and evidence only, never
 scores or levels; `.github/workflows` remains Feedback CI evidence; an unreadable distribution file
