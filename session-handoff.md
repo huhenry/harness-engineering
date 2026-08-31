@@ -43,7 +43,10 @@ Remote acceptance on Draft PR #3 (https://github.com/huhenry/harness-engineering
   `refresh-badge` job was correctly skipped for the PR event.
 - harness-diff run `33352213571`: passed with 21 -> 21, L3 -> L3, and no gap changes.
 - The Action created exactly one marked comment, id `5473123248`; GitHub reported the PR CLEAN and
-  MERGEABLE. The next lifecycle-only push should update this comment in place, not add a second one.
+  MERGEABLE.
+- A lifecycle-only follow-up at `bd7c28c` passed CI run `33352312199` and harness-diff run
+  `33352312102`. Comment `5473123248` kept its original `created_at`, changed `updated_at` to
+  `2026-08-31T02:58:17Z`, and remained the only marked comment.
 
 ## Next session
 

@@ -105,7 +105,9 @@ should be able to trust it instead of re-deriving state from the diff.
 - v1.3 Draft PR acceptance: pushed `v1.3-harness-distribution-profile` and opened Draft PR #3.
   On head `a76197f`, CI run `33352213563` passed Node 20/22/24 and self-assessment; harness-diff run
   `33352213571` passed with 21 -> 21, L3 -> L3, no gap changes, and created one marked comment
-  (`5473123248`). GitHub reports the Draft PR CLEAN and MERGEABLE.
+  (`5473123248`). The lifecycle-only follow-up head `bd7c28c` passed CI run `33352312199` and diff
+  run `33352312102`; the same comment was updated in place and remained the only marked comment.
+  GitHub reports the Draft PR CLEAN and MERGEABLE.
 
 ## In Progress
 
