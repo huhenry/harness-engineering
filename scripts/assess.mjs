@@ -9,7 +9,12 @@ import { loadConfig } from './lib/config.mjs';
 import { detectStack } from './lib/stack.mjs';
 import { SCORERS } from './lib/scorers/index.mjs';
 import { buildReport, renderMarkdown, allGaps } from './lib/report.mjs';
-import { assertProfile, DEFAULT_PROFILE } from './lib/profiles.mjs';
+import {
+  applyDiagnosticOverlay,
+  assertProfile,
+  DEFAULT_PROFILE,
+  profileOverlay,
+} from './lib/profiles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -97,10 +102,14 @@ export function runAssess({ repoPath, lang, configPath, profile = DEFAULT_PROFIL
   const scanCtx = createScanContext(repoPath, { ignore: config.ignore });
   const stack = detectStack(scanCtx);
   const { report: verifyReport, verifiedAt, reason: evidenceReason } = loadEvidence(scanCtx, now);
-  const results = {};
+  const baseResults = {};
   for (const s of SCORERS) {
-    results[s.id] = s.score({ ctx: scanCtx, stack, config, verifyReport, now });
+    baseResults[s.id] = s.score({ ctx: scanCtx, stack, config, verifyReport, now });
   }
+  const results = applyDiagnosticOverlay(
+    baseResults,
+    profileOverlay({ profile: canonicalProfile, ctx: scanCtx, config }),
+  );
   return buildReport({
     repo: repoPath, stack, results,
     // A single source of truth: `evidenceReason` is null exactly when
