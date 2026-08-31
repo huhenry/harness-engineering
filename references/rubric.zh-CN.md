@@ -24,6 +24,20 @@
 分数是**门禁式**的，不是简单相加——见下面的[等级](#等级)一节。一个仓库总分能到 20/24，但只要
 `instructions` 是 0，等级照样卡在 L0，因为 L1 具体要求 `instructions >= 2`，不是看总分高不高。
 
+## 评估 profile
+
+`repository` 是默认 profile，完全按下面写明的六个 scorer 评分。对于产品本身就是可复用 harness
+内容的仓库，`harness-distribution` 会额外应用一层诊断 overlay：扫描根目录或嵌套目录里可读取的
+`**/skills/**/SKILL.md`、`**/agents/*.md` 和 `**/workflows/*`，但排除
+`.github/workflows`。只有文件里确实存在相应的循环描述、工作流入口、停止条件、预算上限、
+maker/checker 角色配对和回滚文字时，这层 overlay 才会消除对应的六条既有 `loop.*` finding。
+
+overlay 在评分完成后运行，而且没有任何能承载分数的输入：它不能改变子系统分数、证据封顶、总分或
+最终等级。它不会执行扫描到的文件；嵌套的分发内容也不能证明根级 instructions、tools、测试、已声明
+检查或 CI。读不出来的文件既不贡献事实，也不贡献证据。评估 JSON 会记录所选的 `profile`；旧报告
+没有这个字段时按 `repository` 解释，而 `diff` 会拒绝比较来自不同 profile 的报告，避免把含义不同的
+诊断硬凑成一个 delta。
+
 ## Instructions（`instructions.*`）
 
 从 `AGENTS.md` 或 `CLAUDE.md` 里评分（按这个顺序找，谁先存在就用谁）。

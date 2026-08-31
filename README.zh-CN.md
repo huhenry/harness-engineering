@@ -126,6 +126,28 @@ Evidence written to <repo>/.harness/verify-report.json
 跑完 `verify --run` 之后再跑一遍 `assess`，看 Feedback（以及一旦声明了启动命令之后的
 Environment）从"因缺证据被封顶——跑一遍 `verify --run` 拿证据"变成一个背后有真实退出码撑着的分数。
 
+## 评估一套 harness 分发包
+
+默认的 `repository` profile 问的是：目标仓库有没有为自己的六子系统 harness 提供证据。如果一个
+仓库的产品本身是一组可复用的 harness 组件，可以显式切换到第二个诊断视角：
+
+```
+$ node scripts/assess.mjs fixtures/albert-shaped --profile harness-distribution
+```
+
+`harness-distribution` 还会读取根目录或嵌套目录里的 `**/skills/**/SKILL.md`、
+`**/agents/*.md` 和 `**/workflows/*`；`.github/workflows` 仍然是 Feedback 管辖的 CI 证据，不是
+可复用 harness 的工作流。只要这些文件确实写明了循环、可读取的工作流入口、停止和预算条件、彼此
+分离的 maker/checker 角色，以及回滚机制，相应的 Loop 诊断就可以被消除。
+
+这个 profile 刻意保持为**只改诊断**：它不能改变任何子系统分数、证据封顶、总分或等级。嵌套 skill
+不能证明外层仓库拥有根级 instructions、产品入口、测试、已声明检查或 CI。读不出来的文件不产生事实，
+也不产生证据。因此 clean-room 的 `albert-shaped` fixture 在两个 profile 下都是 0/24、L0：分发视角
+会消除六条 Loop finding，但根级 finding 原样保留。
+
+每份 JSON 评估报告都会记录 `profile`。GitHub Action 在 v1.3 里继续使用默认的 `repository`，不新增
+profile input。
+
 ## 比较两次体检结果：`harness diff`
 
 `assess --json` 的输出是一份稳定的、带版本号的文档（`schemaVersion`）。存两份——改动前一份、
@@ -179,7 +201,8 @@ exit=1
 `gaps.fixed`/`gaps.introduced`。`--out FILE` 会把报告写到文件里而不是标准输出，并且标准输出
 一个字节都不会打印。两份输入文件的 `schemaVersion` 对不上时会直接拒绝比对，退出码 `2`——不同
 schema 版本的报告，同一个字段可能代表完全不同的含义，本项目宁可拒绝，也不愿意给出一个看起来
-合理、实际上没有意义的数字。
+合理、实际上没有意义的数字。profile 不一致时也同样拒绝：旧报告如果缺少 `profile`，按
+`repository` 解释；但 `repository` 和 `harness-distribution` 报告不能互相 diff。
 
 ## 让它在每个 PR 上自动跑：GitHub Action
 

@@ -134,6 +134,30 @@ Run `assess` again after `verify --run` and watch Feedback (and, once a bootstra
 declared, Environment) move from `capped — run verify --run for evidence` to a real score backed by
 a real exit code.
 
+## Assessing a harness distribution
+
+The default `repository` profile asks whether the target repository proves its own six-subsystem
+harness. A repository that *distributes* reusable harness pieces has a second, explicit diagnostic
+view:
+
+```
+$ node scripts/assess.mjs fixtures/albert-shaped --profile harness-distribution
+```
+
+`harness-distribution` also reads root or nested `**/skills/**/SKILL.md`, `**/agents/*.md`, and
+`**/workflows/*` files; `.github/workflows` remains CI evidence owned by Feedback, not a reusable
+harness workflow. Those files can resolve Loop diagnostics when they document a loop, a readable
+workflow entrypoint, stop and budget conditions, separate maker/checker roles, and rollback.
+
+This profile is deliberately **diagnostic-only**. It cannot change a subsystem score, an evidence
+cap, the total score, or the level. A nested skill is not proof that the containing repository has
+root instructions, a product entrypoint, tests, declared checks, or CI. Unreadable files produce no
+facts and no evidence. The clean-room `albert-shaped` fixture therefore remains 0/24 and L0 in both
+profiles: the distribution view removes its six Loop findings, while its root-level findings remain.
+
+Every JSON assessment records `profile`. The GitHub Action continues to use the default
+`repository` profile and does not expose a profile input in v1.3.
+
 ## Comparing two assessments: `harness diff`
 
 `assess --json`'s output is a stable, versioned document (`schemaVersion`). Save two of them —
@@ -186,7 +210,9 @@ identical to a repository actually regressing), per-subsystem deltas in rubric o
 prints nothing to stdout at all. A `schemaVersion` mismatch between the two input files is refused
 with exit `2` rather than silently compared — two reports built under different schema versions can
 carry fields that mean different things under the same key, and this project would rather refuse
-than answer with a number that merely looks plausible.
+than answer with a number that merely looks plausible. A profile mismatch is refused the same way:
+missing `profile` in an older report means `repository`, but `repository` and
+`harness-distribution` reports cannot be diffed against each other.
 
 ## On every pull request: the GitHub Action
 

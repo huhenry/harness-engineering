@@ -66,7 +66,14 @@ v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则
 
 这几条来自项目最初的设计文档。按本项目的约定，开源仓库的规划文档放在仓库外的同级目录里，
 所以它本来就不会出现在一次检出中。下面是方向，不是排期。其中的 GitHub Action 已经在 v1.2
-交付，下面用删除线标出；其余几条都还没开始动。
+交付，下面用删除线标出；v1.3 的分发 profile 基础也按同样方式记录，但更大的图执行运行时仍然开放。
+
+- ~~**能识别 harness 分发包的评估。** 识别可复用 skill、agent 角色和工作流定义，但不把它们冒充
+  成根仓库自己的证据。~~ **已在 v1.3 交付。** 显式的 `harness-distribution` profile 会发现根目录
+  和嵌套目录里的 harness bundle，而且只能消除 Loop 诊断；子系统分数、证据封顶、总分和等级都与
+  默认 `repository` profile 逐项相同。报告会带 profile，跨 profile diff 会被拒绝。clean-room 的
+  `fixtures/albert-shaped` 同时锁定正向识别和根级 gap 边界。这是 graph engineering 的评估基础，
+  不是 DAG runner 或多 agent 执行引擎。
 
 - **Graph engineering。** 多 agent 编排：把 agent 的执行步骤定义成一张 DAG，并且为**整张图**
   定义验收标准，而不是一次只管一个 agent。这个工具里的 Loop 子系统，是这件事的单 agent 特例。
