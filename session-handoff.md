@@ -3,7 +3,7 @@
 
 ## Previous session
 
-v1.1 is merged and v1.2 is now a standalone Draft PR against `main`:
+v1.1 and v1.2 are both merged into `main`:
 
 - PR #1: https://github.com/huhenry/harness-engineering/pull/1,
   `v1.1-hardening` → `main`, merged as `a4615fe359c6de7e814bef6c36740a97db410832` after a fresh
@@ -11,9 +11,9 @@ v1.1 is merged and v1.2 is now a standalone Draft PR against `main`:
   self-assessment. Local `main` was safely fast-forwarded to the same commit.
 - PR #2: https://github.com/huhenry/harness-engineering/pull/2,
   `v1.2-adoption-levers` → `main`. It was retargeted from `v1.1-hardening` only after PR #1's
-  post-merge CI passed. It remains Draft and must not be merged without separate explicit human
-  approval. Release-state commit `6f8135d` passed retargeted CI run `33349293624` and harness-diff
-  run `33349293626`; GitHub reports the PR mergeable with merge state CLEAN.
+  post-merge CI passed, then merged after separate explicit approval as
+  `5cbcc226d73cc02ef58cb399b1a73c9cf2085868`. Post-merge `main` CI run `33350551289` passed
+  Node 20/22/24 and the push-only badge-refresh job on the current v7 official Actions.
 
 The publication review found and fixed three issues before the Draft PRs were treated as ready:
 
@@ -49,19 +49,26 @@ remain 0/24 L0, 11/24 L2, and 16/24 L3, and the fresh self-assessment remains 23
 snapshot was also independently checked in a Git-backed isolated export: 519/519 and its own
 bootstrap/test/lint evidence all passed.
 
+The next milestone now has a task-level plan outside the product checkout, per project convention:
+
+- `../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`
+- Default assessment remains `repository`; the new mode is explicit
+  `assess --profile harness-distribution`.
+- The profile may correct diagnostic gap false positives and add file evidence, but its overlay has
+  no score field and cannot change subsystem scores, total score, or level.
+- Reports carry their profile, and `diff` refuses cross-profile comparisons so a scanning-policy
+  change cannot masquerade as a repository improvement.
+- `fixtures/albert-shaped/` must be independently authored and must keep missing root instructions,
+  tests, CI, and verification entrypoints visible. No v1.3 product code has started.
+
 ## Next session
 
-1. Inspect PR #2's latest head, retargeted `main` diff, all CI checks, and the single marked Action
-   comment. If the review is clean, report it as ready for human review; do not merge it without
-   separate explicit approval.
-2. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
+1. Read the v1.3 task-level plan, create `v1.3-harness-distribution-profile` from the latest `main`,
+   and execute Task 1 test-first. Do not jump directly to the runner or task-schema milestones.
+2. Keep the v1.3 score-neutral invariant at every commit: ordinary fixture scores and self score
+   must not rise under the profile, and different-profile reports must never be diffed.
+3. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
    not use `pull_request_target` as a workaround; the job summary remains the safe fallback.
-3. After v1.2 is accepted, write a task-level implementation plan for v1.3 before changing product
-   code. The locked scope is the explicit `assess --profile harness-distribution` profile in
-   `../harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`: recognize
-   `skills/**/SKILL.md`, `agents/*.md`, and `workflows/*`, but only improve gap accuracy, never score.
-   Add an independently authored `fixtures/albert-shaped/`; ordinary fixture scores must remain
-   identical with the profile on or off, and this repository's score must not rise.
 
 Keep these deferred facts visible:
 
@@ -77,5 +84,5 @@ Keep these deferred facts visible:
 
 ## Blocked
 
-Nothing in code. PR #2 remains intentionally Draft and needs separate explicit human approval to
-merge. The fork-only warning path needs a real fork PR for live acceptance.
+Nothing in code or planning. The fork-only warning path needs a real fork PR for live acceptance;
+Marketplace publication needs a deliberate release-tag decision.

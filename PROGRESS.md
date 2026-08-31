@@ -76,18 +76,24 @@ should be able to trust it instead of re-deriving state from the diff.
   `33349293624` (Node 20/22/24 plus self-assessment) and harness-diff run `33349293626`. The Action
   validated `21 → 21 (0)`, L3 → L3, `regression=false`, and updated the same comment
   `5404806581`; the API still reports exactly one marked comment.
+- v1.2 release completion: after separate explicit approval, PR #2 was marked Ready and merged into
+  `main` as `5cbcc22`. Post-merge CI run `33350551289` passed the Node 20/22/24 matrix and the
+  push-only badge-refresh path using `actions/checkout@v7` and `actions/setup-node@v7`. Both staged
+  release PRs are now merged; no v1.2 product branch remains ahead of `main`.
+- v1.3 implementation planning: wrote the task-level, TDD-oriented profile plan at
+  `../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`. It locks
+  the default `repository` behavior, the explicit `harness-distribution` profile, a diagnostic-only
+  gap overlay that cannot change scores, cross-profile diff refusal, and a clean-room
+  `albert-shaped` fixture. No v1.3 product code has started.
 
 ## In Progress
 
-- v1.1 is merged into `main`. v1.2 is complete and remains intentionally unmerged as Draft PR #2,
-  now based directly on `main`; all retargeted checks are green, so human review and separate merge
-  approval are the active release gates. The next planned product milestone is v1.3, the explicit
-  `assess --profile harness-distribution` profile described in the external
-  `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`. No v1.3 product code
-  has started.
+- v1.1 and v1.2 are complete and merged into `main`. The next implementation milestone is v1.3,
+  the explicit `assess --profile harness-distribution` profile; its task-level plan is complete,
+  but the implementation branch and product code have not started.
 
 ## Blocked
 
-- Nothing in code. PR #2 remains Draft and requires separate explicit human approval before merge.
-  The ordinary same-repository comment create/update path is live-accepted; the warning-only 403
-  path still needs a real fork PR if that optional external acceptance is desired.
+- Nothing in code or planning. The ordinary same-repository comment create/update path is
+  live-accepted; the warning-only 403 path still needs a real fork PR if that optional external
+  acceptance is desired. Marketplace publication still needs a release-tag decision.
