@@ -1,5 +1,6 @@
 import { parseMarkdown } from '../markdown.mjs';
 import { ladder } from './ladder.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'tools';
 
@@ -158,7 +159,7 @@ export function score({ ctx }) {
       { ok: noDanglingRefs, gapId: 'tools.broken-entrypoint' },
       { ok: hasPermissionsFile, gapId: 'tools.no-permissions' },
     ] },
-    { score: 4, checks: [{ ok: leastPrivilegeOk, gapId: 'tools.no-least-privilege-doc' }] },
+    { score: MAX_SCORE, checks: [{ ok: leastPrivilegeOk, gapId: 'tools.no-least-privilege-doc' }] },
   ]);
 
   const evidence = [];

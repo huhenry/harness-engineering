@@ -15,16 +15,43 @@ should be able to trust it instead of re-deriving state from the diff.
   evidence-writing entrypoint.
 - Tasks 19-23: bilingual templates (16 files x 2 languages), `scaffold.mjs`, the five
   `harness-*` skills, the Claude Code plugin manifest + `install.sh`, bilingual README/ROADMAP.
-- Task 24 (this one, dogfooding): ran this tool on this repository, went from L0 (3/24) to an
+- Task 24 (dogfooding): ran this tool on this repository, went from L0 (3/24) to an
   evidence-backed L5 (23/24), and wrote the CI workflow, self-assessment gate and
   `harness-badge.json` that keep it there. The remaining point is Feedback, which is at 3/4 for
-  two honest reasons: this project has no end-to-end suite and no runtime to observe. See
-  `session-handoff.md` for the exact state this session left behind.
+  two honest reasons: this project has no end-to-end suite and no runtime to observe.
+- v1.1 (hardening): closed all four `ROADMAP.md` v1.1 candidates. The placeholder rule
+  (`scripts/lib/placeholder.mjs`) stops an unfilled template or a byte-identical vendored copy from
+  satisfying the State handoff rung, and along the way added a new gap id,
+  `state.handoff-unfilled`, distinguishing "the file is missing" from "the file exists but was
+  never filled in" (a scope expansion beyond the original plan, authorized mid-flight). Report
+  rendering now suppresses a gap that presupposes a file another gap already says is missing (e.g.
+  "progress file is stale" no longer appears alongside "no progress file"). The top-rung score of 4
+  is now a single `MAX_SCORE` constant in `rubric.mjs` instead of eight hand-written literals.
+  `install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files so their
+  commands resolve without asking the user for a path, scoped to skills actually copied from the
+  source checkout so a pre-existing third-party skill is never rewritten. Baseline fixture scores
+  (`bad-repo`/`mid-repo`/`good-repo`) and this repository's own self-assessment (23/24, L5) are
+  unchanged — this was hardening, not a scoring behavior change.
+- v1.1 whole-branch review and its fix wave: the handoff gaps now name the artefact each one is
+  actually about instead of both naming both files, `state.handoff-unfilled`'s explanation no
+  longer asserts a reason it cannot know, gap suppression covers 11 declared pairs instead of 2
+  (with a written bar for adding any more), `install.sh`'s substitution no longer rewrites the
+  skills' own explanation of the placeholder, and `ROADMAP.md` records what the placeholder rule
+  still does not cover. Text and rendering only — no score moved.
+- v1.1 re-review: fixed two regressions the fix wave introduced. Gap suppression marks rather than
+  filters, so `assess`'s exit code and `scaffold`'s plan see every failing check (the exit code had
+  silently inverted from 1 to 0 for a repository whose only high-severity gaps were suppressed).
+  And `loop.none` split into `loop.none` + `loop.no-entrypoint`, so a repository that documents an
+  autonomous loop but never wires it up keeps its stop-condition and budget-cap gaps instead of
+  losing them to a suppression meant for repositories with no loop at all. Gap ids 38 → 39; no
+  score moved.
 
 ## In Progress
 
-- Nothing currently. All 24 planned tasks are complete; from here the project moves to whatever
-  `ROADMAP.md`'s v1.1 candidates or "beyond v1.1" directions get picked up next.
+- v1.1 hardening sits on the `v1.1-hardening` branch, reviewed and fixed, waiting to be merged
+  into `main`. Nothing else is in flight: the "Beyond v1.1" items in `ROADMAP.md` (`harness diff`,
+  the GitHub Action, more stack detectors, graph engineering, a web dashboard) are directions, and
+  none of them is started.
 
 ## Blocked
 

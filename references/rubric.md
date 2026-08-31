@@ -79,11 +79,37 @@ Progress file candidates: `PROGRESS.md`, `claude-progress.md`, `docs/PROGRESS.md
 | 1 | A progress file exists. |
 | 2 | It was modified (by git history, falling back to filesystem mtime) within the last 30 days, **and** it has headings matching done/in-progress/blocked, all three. |
 | 3 | `feature_list.json` exists **and** validates (every feature has a non-empty, unique `id`, a non-empty `title`, and a `status` in `todo`/`in-progress`/`done`/`blocked`). |
-| 4 | `session-handoff.md` and `clean-state-checklist.md` both exist (at any depth), **and** `AGENTS.md` documents a session-start/session-end lifecycle. |
+| 4 | `session-handoff.md` and `clean-state-checklist.md` both exist **as filled-in files** (at any depth), **and** `AGENTS.md` documents a session-start/session-end lifecycle. A missing artefact reports `state.no-handoff`. An artefact that exists but that this tool cannot read as filled in reports `state.handoff-unfilled` instead — vendoring or scaffolding the template is not writing the document. "Not filled in" covers three states: an unreplaced `FILL:` marker; a copy that is byte-identical to one of this project's shipped templates *after* a leading `scaffold` provenance line is stripped (so a freshly scaffolded file counts, even though it is never literally byte-identical); and a file that could not be read at all. The two ids are independent: "the file is missing" and "the file exists but was never filled in" are different facts, and a repository can trip one per artefact at the same time — each gap's text names only the artefacts that actually caused it, and an artefact that exists is named at the path it was found at rather than at its canonical root name. |
 
 Gap ids: `state.no-progress`, `state.progress-stale`, `state.progress-incomplete`,
 `state.no-feature-list`, `state.feature-list-invalid`, `state.no-handoff`,
-`state.lifecycle-undocumented`.
+`state.handoff-unfilled`, `state.lifecycle-undocumented`.
+
+### What the "unfilled template" check does not catch
+
+Stated here for the same reason the [README's Safety section](../README.md#safety) states the
+blocklist's ceiling: a limit disclosed is worth more than a limit implied. The check has two rules
+— an unreplaced `FILL:` marker (Rule A), and byte-identity with a shipped template after a leading
+`scaffold` provenance line is stripped (Rule B). Rule B is exact byte comparison, and "byte" means
+byte:
+
+- A CRLF checkout of a vendored template, a single differing trailing newline, or one edited
+  character anywhere in the file, all defeat it.
+- So does a template whose *body* changed between tool versions. The provenance line is matched by
+  shape rather than by version number and survives a release; the body is not, and does not.
+- Six of this project's markdown templates carry a `FILL:` marker, so Rule A still catches every
+  case above for those. `clean-state-checklist.md` is the one handoff artefact with no marker in
+  either language — for that file Rule B is the only defence, so any of the above lets an untouched
+  vendored copy score as filled in.
+- In an install that ships `scripts/` without `templates/` next to it (a script-only plugin cache
+  copy, for example — a shape `assess` supports and is tested for), there is nothing to compare
+  against: Rule B silently becomes a no-op for the whole run, with no note in the report. Rule A is
+  unaffected.
+
+Every one of these fails in the *permissive* direction: Rule B does not fire, and an untouched
+template counts as a filled-in document. Read "byte-identical" as exactly that and nothing broader.
+The check errs the other way in one case only — a file this tool cannot read at all is treated as
+unfilled, which costs a point rather than granting one that was not earned.
 
 ## Feedback (`feedback.*`)
 
@@ -114,14 +140,20 @@ Scored from `AGENTS.md`, `CLAUDE.md`, `README.md`, and any `loop/*.md` file, con
 
 | Score | Criterion |
 | --- | --- |
-| 0 | No mention of an autonomous/scheduled loop anywhere in those docs. |
+| 0 | No mention of an autonomous/scheduled loop anywhere in those docs. Reports `loop.none`. |
 | 1 | The docs mention a loop pattern (`autonomous`, `loop`, `cron`, `scheduled`, or the Chinese equivalents). |
-| 2 | A concrete entry point exists: a scheduled CI workflow, a `loop/*.md` file, or `harness.config.json` declares a `loop` field. |
+| 2 | A concrete entry point exists: a scheduled CI workflow, a `loop/*.md` file, or `harness.config.json` declares a `loop` field. Failing this rung alone — a loop described in prose that nothing invokes — reports `loop.no-entrypoint`, not `loop.none`. |
 | 3 | The docs describe both a stop condition and a budget cap (iteration/time/spend limit). |
 | 4 | The docs describe a maker-checker split (or `evaluator-rubric.md` exists), **and** a rollback mechanism. |
 
-Gap ids: `loop.none`, `loop.no-stop-condition`, `loop.no-budget-cap`, `loop.no-maker-checker`,
-`loop.no-rollback`.
+Rungs 0 and 2 report **different** gap ids on purpose. "No loop pattern is described anywhere" and
+"a loop is described but nothing runs it" are different facts with different fixes, and the rung-3
+and rung-4 gaps below are suppressed only beneath the first: a repository that documents an
+autonomous loop and never wires it up is still told, in full, that its loop has no stop condition
+and no budget cap. A repository that has never mentioned a loop is told one thing.
+
+Gap ids: `loop.none`, `loop.no-entrypoint`, `loop.no-stop-condition`, `loop.no-budget-cap`,
+`loop.no-maker-checker`, `loop.no-rollback`.
 
 ## Levels
 

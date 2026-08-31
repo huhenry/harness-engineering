@@ -76,11 +76,33 @@ Gap id：`environment.no-lockfile`、`environment.no-runtime-pin`、`environment
 | 1 | 进度文件存在。 |
 | 2 | 它在最近 30 天内被改动过（优先看 git 历史，没有 git 历史再退回文件的修改时间），**并且**同时有"已完成""进行中""阻塞中"三类标题。 |
 | 3 | `feature_list.json` 存在**并且**通过校验（每个 feature 的 `id` 非空且唯一，`title` 非空，`status` 属于 `todo`/`in-progress`/`done`/`blocked` 之一）。 |
-| 4 | `session-handoff.md` 和 `clean-state-checklist.md`（不限层级）都存在，**并且**`AGENTS.md` 写明了会话开始/结束的生命周期。 |
+| 4 | `session-handoff.md` 和 `clean-state-checklist.md`（不限层级）都以**已填写**的文件形式存在，**并且**`AGENTS.md` 写明了会话开始/结束的生命周期。产物缺失报 `state.no-handoff`；文件存在、但这个工具无法把它读成"已填写"的，改报 `state.handoff-unfilled`——把模板 vendor 或 scaffold 进来不等于写了这份文档。"没填写"涵盖三种状态：还带着未替换的 `FILL:` 标记；剥掉开头那行 `scaffold` 溯源注释之后与本项目出厂模板逐字节相同（所以刚 scaffold 出来的文件也算，尽管它从来不是字面意义上的逐字节相同）；以及文件根本读不出来。这两个 gap id 各自独立判断："文件不存在"和"文件在但没写"是两件不同的事，一个仓库可能两个产物各踩中一条、同时触发——每条 gap 的文案只会点名真正触发它的那个产物；而且对存在的产物，点名的是它实际所在的路径，不是根目录下那个规范文件名。 |
 
 Gap id：`state.no-progress`、`state.progress-stale`、`state.progress-incomplete`、
 `state.no-feature-list`、`state.feature-list-invalid`、`state.no-handoff`、
-`state.lifecycle-undocumented`。
+`state.handoff-unfilled`、`state.lifecycle-undocumented`。
+
+### "模板没填写"这项检查抓不到什么
+
+写在这里的理由，跟 [README 的安全一节](../README.zh-CN.md#安全)要把黑名单的天花板讲清楚是一样
+的：把边界如实说出来，比让人自己去猜有价值。这项检查只有两条规则——未替换的 `FILL:` 标记
+（规则 A），以及剥掉开头那行 `scaffold` 溯源注释之后与出厂模板逐字节相同（规则 B）。规则 B 是
+严格的逐字节比较，"字节"就是字节：
+
+- vendor 进来的模板如果是 CRLF 换行、结尾多一个或少一个换行、或者文件里任意一个字符被改过，
+  规则 B 就不成立了。
+- 模板**正文**在两个工具版本之间变过，同样不成立。那行溯源注释是按形状匹配的、不认版本号，
+  能跨版本存活；正文不是，也不能。
+- 本项目有六份 markdown 模板带 `FILL:` 标记，上面这些情况对它们来说规则 A 都还能兜住。
+  `clean-state-checklist.md` 是唯一一份两种语言里都没有标记的交接产物——对这个文件来说规则 B 是
+  唯一防线，所以上面任何一种情况都会让一份原封不动 vendor 进来的副本被判成"已填写"。
+- 如果某种安装形态只带了 `scripts/`、旁边没有 `templates/`（比如只复制脚本的插件缓存副本——
+  `assess` 支持并且有测试覆盖这种形态），那就根本没有东西可比：规则 B 会在整个进程生命周期里
+  静默变成空操作，报告里不会有任何提示。规则 A 不受影响。
+
+上面每一条失效的方向都是**偏松**的：规则 B 不触发，一份没动过的模板就被算成写好的文档。所以
+"逐字节相同"就按字面理解，不要读出更强的保证。这项检查只有一种情况是偏严的——文件这个工具
+根本读不出来时会按"没填写"处理，那是少给一分，而不是白送一分。
 
 ## Feedback（`feedback.*`）
 
@@ -110,14 +132,19 @@ Gap id：`feedback.no-tests`、`feedback.no-declared-commands`、`feedback.comma
 
 | 分数 | 判据 |
 | --- | --- |
-| 0 | 这些文档里完全没提到自主/定时循环。 |
+| 0 | 这些文档里完全没提到自主/定时循环。报 `loop.none`。 |
 | 1 | 文档提到了循环模式（`autonomous`、`loop`、`cron`、`scheduled`，或对应的中文说法"自主""循环"）。 |
-| 2 | 存在一个具体的入口：一个定时触发的 CI 工作流、一个 `loop/*.md` 文件，或者 `harness.config.json` 声明了 `loop` 字段。 |
+| 2 | 存在一个具体的入口：一个定时触发的 CI 工作流、一个 `loop/*.md` 文件，或者 `harness.config.json` 声明了 `loop` 字段。只差这一级不过——循环写在文档里、却没有任何东西触发它——报的是 `loop.no-entrypoint`，不是 `loop.none`。 |
 | 3 | 文档同时描述了停止条件和预算上限（迭代次数/时间/花费的上限）。 |
 | 4 | 文档描述了 maker-checker 角色分离（或存在 `evaluator-rubric.md`），**并且**描述了回滚机制。 |
 
-Gap id：`loop.none`、`loop.no-stop-condition`、`loop.no-budget-cap`、`loop.no-maker-checker`、
-`loop.no-rollback`。
+第 0 级和第 2 级刻意报**不同**的 gap id。"文档里根本没描述过循环"和"循环描述了、但没有东西会跑
+它"是两件不同的事，修法也不同；而且下面第 3、4 级的 gap 只会在前者之下被抑制：一个把自主循环
+写得清清楚楚、只是没接上入口的仓库，依然会被完整告知它的循环缺少停止条件、缺少预算上限。
+一个从没提过循环的仓库，则只会被告知一件事。
+
+Gap id：`loop.none`、`loop.no-entrypoint`、`loop.no-stop-condition`、`loop.no-budget-cap`、
+`loop.no-maker-checker`、`loop.no-rollback`。
 
 ## 等级
 

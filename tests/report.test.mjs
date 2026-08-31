@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReport, renderMarkdown, SCHEMA_VERSION } from '../scripts/lib/report.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { buildReport, renderMarkdown, SCHEMA_VERSION, allGaps, visibleGaps } from '../scripts/lib/report.mjs';
+import { MESSAGES } from '../scripts/lib/i18n.mjs';
+import { gapById } from '../scripts/lib/rubric.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const NOW = new Date('2026-08-10T12:00:00Z');
 
@@ -14,7 +21,13 @@ const results = {
   instructions: { score: 4, cappedByEvidence: false, evidence: [{ kind: 'file', path: 'AGENTS.md', note: '80 lines' }], gapIds: [] },
   tools: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['tools.no-least-privilege-doc'] },
   environment: { score: 3, cappedByEvidence: true, evidence: [], gapIds: ['environment.no-container'] },
-  state: { score: 3, cappedByEvidence: false, evidence: [], gapIds: ['state.no-handoff'] },
+  // gapVars mirrors what state.mjs really returns: the handoff gaps name
+  // the specific artefact that caused them, so buildReport has to be handed
+  // the substitution values along with the gap id.
+  state: {
+    score: 3, cappedByEvidence: false, evidence: [], gapIds: ['state.no-handoff'],
+    gapVars: { 'state.no-handoff': { artefacts: 'session-handoff.md' } },
+  },
   feedback: { score: 2, cappedByEvidence: true, evidence: [], gapIds: ['feedback.commands-unverified'] },
   loop: { score: 2, cappedByEvidence: false, evidence: [], gapIds: ['loop.no-budget-cap'] },
 };
@@ -59,10 +72,43 @@ test('gap ids expand into full gap objects with roi', () => {
   assert.ok(gap.title && gap.why && gap.fix, 'localized text must be materialized');
 });
 
+// `suppressedBy` is a deliberate superset field, the same kind of addition
+// as level.unmetGates (see buildReport's own note): spec 6.3 does not
+// mention it, and it is not a rubric internal leaking through either -- it
+// is a fact about THIS report (is this gap's precondition also present
+// here?), which no static rubric field can express. It lives on the gap
+// rather than in a parallel "suppressed ids" array on purpose: a parallel
+// array is a second list every consumer has to remember to consult, and a
+// consumer forgetting is exactly how the exit-code regression happened.
 test('gap objects match spec 6.3 shape — no leaked internal rubric fields', () => {
   const gap = build().subsystems.find((s) => s.id === 'tools').gaps[0];
   assert.deepEqual(Object.keys(gap).sort(),
-    ['fix', 'id', 'roi', 'scaffoldable', 'severity', 'title', 'why'].sort());
+    ['fix', 'id', 'roi', 'scaffoldable', 'severity', 'suppressedBy', 'title', 'why'].sort());
+});
+
+// The rule the exit-code regression broke, pinned in the only way that
+// actually holds: by reading the source of everything that DECIDES
+// something. `report.subsystems[].gaps` is the obvious thing to reach for
+// and it is now the complete list, so reading it is no longer a bug -- but
+// `allGaps` is the intent-revealing name, and requiring it here means a
+// future consumer that hand-rolls a flatten (and could just as easily
+// hand-roll a filter) fails this test instead of shipping.
+//
+// Comment lines are excluded: both files legitimately DISCUSS
+// `subsystems[].gaps` in the comments explaining why they don't read it.
+test('nothing behavioural reads the gap list by hand — assess and scaffold go through allGaps', () => {
+  const stripComments = (src) => src.split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+  for (const rel of ['scripts/assess.mjs', 'scripts/scaffold.mjs']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+    assert.ok(
+      !code.includes('.gaps'),
+      `${rel} reaches into a report's .gaps directly — call allGaps(report) instead, `
+      + 'so suppression can never silently change what this file decides',
+    );
+    assert.match(code, /allGaps\(/, `${rel} must derive its gap list from allGaps()`);
+  }
 });
 
 test('level is computed from scores and evidence flag', () => {
@@ -138,4 +184,204 @@ test('buildReport output differs by lang, but is stable within a lang', () => {
   const zh = build({ lang: 'zh' });
   assert.notEqual(JSON.stringify(en), JSON.stringify(zh), 'lang must affect materialized text');
   assert.equal(JSON.stringify(build({ lang: 'zh' })), JSON.stringify(zh), 'same lang must stay byte-identical');
+});
+
+/**
+ * A results object with every subsystem at 0 and no gaps except state's.
+ *
+ * The two handoff gap messages interpolate `{artefacts}`, so any caller that
+ * asks for one of them must supply the vars a real scorer would — buildReport
+ * refuses to materialize a message with an unsubstituted placeholder. Filled
+ * in here for the whole file rather than at each call site: which artefact is
+ * named is irrelevant to every suppression test below, but the vars have to
+ * exist for the report to build at all.
+ */
+const HANDOFF_GAP_VARS = {
+  'state.no-handoff': { artefacts: 'session-handoff.md' },
+  'state.handoff-unfilled': { artefacts: 'clean-state-checklist.md' },
+};
+
+function resultsWithStateGaps(gapIds) {
+  const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  const gapVars = Object.fromEntries(
+    gapIds.filter((id) => id in HANDOFF_GAP_VARS).map((id) => [id, HANDOFF_GAP_VARS[id]]),
+  );
+  return {
+    instructions: empty, tools: empty, environment: empty,
+    state: { score: 0, cappedByEvidence: false, evidence: [], gapIds, gapVars },
+    feedback: empty, loop: empty,
+  };
+}
+
+const REPORT_ARGS = {
+  repo: '/fake', stack: [], hasEvidence: false, evidenceReason: 'missing',
+  verifiedAt: null, toolVersion: '0.1.0', now: new Date('2026-08-20T00:00:00Z'), lang: 'en',
+};
+
+// "No progress file" and "Progress file is stale" used to appear in the
+// same report — the second presupposes a file the first just said does not
+// exist. Suppression MARKS rather than removes: the human report hides the
+// marked ones, everything behavioural still sees them.
+test('gaps that presuppose a missing file are marked, and hidden from the human report', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale', 'state.progress-incomplete']),
+  });
+  assert.deepEqual(
+    visibleGaps(report).map((g) => g.id), ['state.no-progress'],
+    'only the precondition gap is worth showing a human',
+  );
+  assert.deepEqual(
+    allGaps(report).map((g) => [g.id, g.suppressedBy]).sort(),
+    [['state.no-progress', null],
+      ['state.progress-incomplete', 'state.no-progress'],
+      ['state.progress-stale', 'state.no-progress']].sort(),
+    'every failing check stays in the report, each carrying why it is hidden',
+  );
+});
+
+test('a presupposing gap survives unmarked when its precondition gap is absent', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.progress-stale']),
+  });
+  assert.deepEqual(visibleGaps(report).map((g) => g.id), ['state.progress-stale']);
+  assert.equal(allGaps(report)[0].suppressedBy, null);
+});
+
+// The regression this whole marking design exists to make impossible:
+// `assess`'s exit code and `scaffold`'s plan both read the gap list, and
+// both silently started reading the FILTERED one. A repo whose only
+// high-severity gap is suppressed must still be reported as having one.
+test('a suppressed gap still counts for anything behavioural', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale']),
+  });
+  // state.progress-stale is high severity; state.no-progress is too, so use
+  // the loop pair for an unambiguous case where ONLY the suppressed gap is
+  // high.
+  const loopReport = buildReport({
+    ...REPORT_ARGS,
+    results: {
+      ...resultsWithStateGaps([]),
+      loop: { score: 0, cappedByEvidence: false, evidence: [], gapIds: ['loop.none', 'loop.no-stop-condition'] },
+    },
+  });
+  assert.deepEqual(visibleGaps(loopReport).map((g) => g.id), ['loop.none'],
+    'the human report shows only the precondition');
+  assert.equal(visibleGaps(loopReport).some((g) => g.severity === 'high'), false,
+    'sanity: the visible list alone would say this repo has no high-severity gap');
+  assert.equal(allGaps(loopReport).some((g) => g.severity === 'high'), true,
+    'allGaps must still see loop.no-stop-condition — this is what assess exits 1 on');
+  assert.ok(report.subsystems.find((s) => s.id === 'state').gaps.length >= 2);
+});
+
+test('suppression does not change the score', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale']),
+  });
+  assert.equal(report.subsystems.find((s) => s.id === 'state').score, 0);
+  assert.equal(report.score.total, 0);
+});
+
+test('the rendered markdown no longer shows both progress gaps at once', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-progress', 'state.progress-stale']),
+  });
+  const md = renderMarkdown(report, 'en');
+  assert.ok(md.includes('No progress file'));
+  assert.ok(!/Progress file is stale/.test(md));
+});
+
+/** A results object with every subsystem at 0 and gaps only where named. */
+function resultsWith(perSubsystem) {
+  const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+  const out = {
+    instructions: empty, tools: empty, environment: empty, state: empty, feedback: empty, loop: empty,
+  };
+  for (const [id, gapIds] of Object.entries(perSubsystem)) {
+    const gapVars = Object.fromEntries(
+      gapIds.filter((g) => g in HANDOFF_GAP_VARS).map((g) => [g, HANDOFF_GAP_VARS[g]]),
+    );
+    out[id] = { score: 0, cappedByEvidence: false, evidence: [], gapIds, gapVars };
+  }
+  return out;
+}
+
+// Suppression has no severity dimension: `loop.none` is `low` and it hides
+// `loop.no-stop-condition` and `loop.no-budget-cap`, both `high`. That is an
+// ordinary state (fixtures/good-repo reaches it), and it produced a report
+// printing no high-severity findings beside an exit code of 1, which README
+// defines as "high-severity gaps found". Asserted on the RENDERED text,
+// because the contradiction only exists in what a human reads.
+test('the report says how many high-severity gaps it is hiding, and what implies them', () => {
+  for (const lang of ['en', 'zh']) {
+    const md = renderMarkdown(buildReport({
+      ...REPORT_ARGS,
+      lang,
+      results: resultsWith({ loop: ['loop.none', 'loop.no-stop-condition', 'loop.no-budget-cap'] }),
+    }), lang);
+    assert.match(md, /\b2\b/, `${lang}: the count of hidden high-severity gaps must appear`);
+    const impliedBy = MESSAGES[lang]['gap.loop.none.title'];
+    assert.ok(md.includes(impliedBy), `${lang}: the note must name the gap that implies them (${impliedBy})`);
+    // The hidden gaps themselves stay out of the list.
+    assert.ok(!md.includes(MESSAGES[lang]['gap.loop.no-stop-condition.title']),
+      `${lang}: a suppressed gap must still not be listed individually`);
+  }
+});
+
+test('every precondition hiding a high-severity gap is named, not just the first', () => {
+  const md = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({
+      state: ['state.no-progress', 'state.progress-stale'],
+      loop: ['loop.none', 'loop.no-budget-cap'],
+    }),
+  }), 'en');
+  assert.ok(md.includes(MESSAGES.en['gap.state.no-progress.title']));
+  assert.ok(md.includes(MESSAGES.en['gap.loop.none.title']));
+  assert.match(md, /not shown: 2\./, 'both hidden high-severity gaps must be counted');
+});
+
+// The two silent cases. A stray blank line under the heading would be a
+// visible regression in every report that has nothing to disclose, which is
+// most of them — including this repository's own self-assessment.
+test('nothing is emitted when no high-severity gap is hidden', () => {
+  const noneHidden = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({ loop: ['loop.no-budget-cap'] }),
+  }), 'en');
+  assert.ok(noneHidden.includes('## Gaps by ROI\n\n### '),
+    `the heading must be followed straight by the first gap, got:\n${noneHidden}`);
+
+  // Suppressed but NOT high-severity: genuine noise, and it stays silent.
+  const onlyLowHidden = renderMarkdown(buildReport({
+    ...REPORT_ARGS,
+    results: resultsWith({ state: ['state.no-progress', 'state.progress-incomplete'] }),
+  }), 'en');
+  assert.equal(gapById('state.progress-incomplete').severity, 'medium',
+    'sanity: this test only means anything while the suppressed gap is below high');
+  assert.ok(onlyLowHidden.includes('## Gaps by ROI\n\n### '),
+    `a suppressed medium-severity gap must not produce a note, got:\n${onlyLowHidden}`);
+});
+
+// Fix round 1, Finding 1: state.no-handoff and state.handoff-unfilled are
+// NOT a presupposing pair, even though tests/scorers/state.test.mjs already
+// proves the scorer can emit both together (one handoff artefact absent,
+// the other present-but-unfilled -- two distinct real problems about two
+// different files, not one gap presupposing what the other denies; see the
+// comment on state.handoff-unfilled's def() in rubric.mjs). Nothing before
+// this test exercised that pair through buildReport, so a future
+// presupposedBy edit wiring these two together would have silently
+// regressed with no test catching it.
+test('state.no-handoff and state.handoff-unfilled both survive un-suppressed', () => {
+  const report = buildReport({
+    ...REPORT_ARGS,
+    results: resultsWithStateGaps(['state.no-handoff', 'state.handoff-unfilled']),
+  });
+  const ids = report.subsystems.find((s) => s.id === 'state').gaps.map((g) => g.id);
+  assert.deepEqual(new Set(ids), new Set(['state.no-handoff', 'state.handoff-unfilled']));
 });

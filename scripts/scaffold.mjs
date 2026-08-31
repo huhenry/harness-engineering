@@ -36,8 +36,8 @@ import { createScanContext } from './lib/scan.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { TEMPLATE_WHITELIST, readTemplate } from './lib/templates.mjs';
 import { GAPS, SUBSYSTEMS, gapById, gapsFor } from './lib/rubric.mjs';
-import { sortGaps } from './lib/roi.mjs';
 import { runAssess } from './assess.mjs';
+import { allGaps } from './lib/report.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -166,16 +166,21 @@ function resolveOnly(tokens) {
 /**
  * Which gap ids to scaffold, and in what order. Default path (rule 5's
  * first clause, `only` unset): every `scaffoldable` gap `runAssess` actually
- * found for this repository, ROI descending -- the same flatten-then-sort
- * report.mjs's own `renderGapList` uses, so the ordering a human reading
- * `assess`'s own report sees is the same ordering scaffold acts on.
- * `--only` path: see `resolveOnly` above.
+ * found for this repository, ROI descending.
+ *
+ * `allGaps`, not the subset `renderMarkdown` prints. Writing a file is a
+ * behavioural decision, so it acts on every failing check -- a gap that is
+ * merely not worth SHOWING beside its precondition is still a gap whose
+ * template the repository is missing. This matters concretely:
+ * loop.no-maker-checker is suppressed beside loop.none but is the only
+ * claimant of `evaluator-rubric.md`, so reading the printed subset here
+ * would silently stop scaffold offering it to exactly the repositories with
+ * no loop at all. `--only` path: see `resolveOnly` above.
  */
 function selectGapIds({ only, repoPath, lang, configPath, now }) {
   if (only && only.length > 0) return resolveOnly(only);
   const report = runAssess({ repoPath, lang, configPath, now });
-  const allGaps = sortGaps(report.subsystems.flatMap((s) => s.gaps));
-  return allGaps.filter((g) => g.scaffoldable).map((g) => g.id);
+  return allGaps(report).filter((g) => g.scaffoldable).map((g) => g.id);
 }
 
 /**

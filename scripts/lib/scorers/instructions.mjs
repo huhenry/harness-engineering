@@ -1,5 +1,6 @@
 import { parseMarkdown, findSection } from '../markdown.mjs';
 import { ladder } from './ladder.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'instructions';
 
@@ -70,7 +71,7 @@ export function score({ ctx, stack }) {
       { ok: hasVerify, gapId: 'instructions.no-verification' },
       { ok: withinLength, gapId: 'instructions.too-long' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: layered, gapId: 'instructions.no-layering' },
       { ok: linksResolve, gapId: 'instructions.stale-links' },
     ] },

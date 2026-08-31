@@ -3,118 +3,64 @@
 这不是一份愿望清单。下面每一条都是这个项目开发过程中真实发现、又刻意推迟处理的条目——
 不是事后为了凑数编出来的。每一条都会说清楚：发现了什么、怎么核实的、为什么 v1 没修。
 
-v1.1 候选的每一条，在写进这份文档之前都重新对照过当前代码，所以下面引用的文件和行号是
-本次发布时的实际情况，而不是当初发现问题时的旧位置。最后那节更大的方向来自项目最初的设计文档。
+v1.1 已经把这一节原本跟踪的四条候选全部发布：占位符规则、渲染期 gap 抑制、共享的
+`MAX_SCORE` 常量，以及 `install.sh` 的路径替换。其中有一条实际交付的范围比原条目要窄，
+剩下的部分记在下面，而不是跟着条目一起删掉。再往后那些更大的方向来自项目最初的设计文档。
 
-## v1.1 候选
+## v1.1 遗留、仍然未解决的部分
 
-### 1. 在渲染阶段抑制那些"预设了某个文件存在"的 gap
+- **没填写的模板在绝大多数地方依然算作"内容"。** 占位符规则
+  （`scripts/lib/placeholder.mjs`）只接进了一处检查：`scripts/lib/scorers/state.mjs` 里第 4 级
+  的交接产物。`instructions`、`tools`、`loop`，以及 `state` 的另外三级，依然会把一份自己都写着
+  "这是占位符"的文件算作内容。直接实测过：往一个空目录 `scaffold --apply`，再对它跑 `assess`，
+  得到 **12/24，其中 Tools 4/4、Loop 4/4**——这两项完全是靠没人读过的文件拿到的。
+  `templates/en/Makefile` 开头几行自己就写着"下面每一个 target 在 FILL 那些行被替换之前都只是
+  占位符"；三份 `loop/*.md` 模板和 `evaluator-rubric.md` 都带着 `FILL:` 标记；`PROGRESS.md` 和
+  `feature_list.json` 也是同样的方式把 State 顶到 3/4。这不是回归——v1.1 本来就只覆盖交接那一
+  级，这是它之前就有的状态——但要把它关掉，是要跨好几个 scorer 重新定义"存在"是什么意思，
+  而不是再多调一次 `isFilledArtifact`：所有 fixture 的分数和这个仓库自己的自评分都得重新推导。
+  `instructions.unfilled-template` 是顺理成章的第一步，而且它本身就是一个独立任务：新的 gap
+  id、双语文案、`references/rubric.md` 两个语言版本各加一行，外加一个新 fixture。
 
-**问题在哪：** 一个仓库完全没有进度文件的时候，当前的评估报告会同时显示"缺少进度记录文件"
-（`state.no-progress`）和"进度文件已过期"（`state.progress-stale`）——后一条 gap 的前提是这个
-文件存在，但前一条 gap 刚刚说了它不存在。直接拿 `fixtures/bad-repo` 实测确认：
+- **`scaffold` 会用一份没填写的占位文件把 Loop 的"入口"那一级顶过去。** 这是上一条的一个具体、
+  实测过的实例，单独记一条，是因为它是 `scaffold` 自己关掉的一级，而不是用户 vendor 进来的。
+  `loop.no-entrypoint` 刻意不带任何模板，但这挡不住 `scaffold` 碰到这一级：
+  `loop.no-maker-checker` 会写 `loop/maker-checker-loop.md`，而 `loop/` 目录下只要存在文件，
+  第 2 级的入口检查就算通过。实测对象是一个 `AGENTS.md` 里只提了一句自主循环、别的什么都没有的
+  仓库——`scaffold --apply` 之前 `Loop 1/4`，之后 **`Loop 2/4`**，而顶上去的那份文件里
+  `FILL:` 标记还原封不动。那个仓库其实并没有任何东西在跑循环。要真正修好，得让入口检查能分清
+  "一份说明循环定义在哪里的文档"和"一个真的会把循环启动起来的触发器"——这跟上一条一样，
+  是"'存在'到底意味着什么"的改动，不是一个特例补丁。
 
-```
-$ node scripts/assess.mjs fixtures/bad-repo
-...
-### State · No progress file (ROI 10)
-...
-### State · Progress file is stale (ROI 10)
-...
-```
+- **抑制机制没有"严重程度"这个维度。** `presupposedBy`（`scripts/lib/rubric.mjs`）允许一个
+  `low`（低危）gap 抑制掉 `high`（高危）gap，而且这不是假设情况：`loop.none`（低危）如今就在
+  抑制 `loop.no-stop-condition` 和 `loop.no-budget-cap`（都是高危）——直接对 `fixtures/bad-repo`
+  跑一遍 `assess` 就能验证到。v1.1 交付的是一次"披露"，而不是一次"根治"：`suppressedHighNote`
+  （`scripts/lib/report.mjs`）现在会打印出报告隐藏了多少条高危 gap，并点名是哪条 gap 让它们被
+  隐藏，这样退出码是 1、报告里却一条高危发现都看不到的情况，就不再是一副自相矛盾的样子。之所以
+  没有动手根治，是因为唯一能消除这种不对称的做法——不让任何 gap 去抑制比自己更严重的 gap——会在
+  同一份 fixture 上把 `loop.no-stop-condition` 和 `loop.no-budget-cap` 从 `loop.none` 底下重新
+  翻出来，原样复现这个里程碑本来要消灭的那个矛盾："一个 gap 的前提，是另一个 gap 刚说不存在的
+  东西"。如果以后真的给 `presupposedBy` 加上严重程度规则，这条披露文案就应该被重新考虑，而不是
+  留着跟新规则并存——两者是同一个事实的两种不同处理方式，不是可以一起留在报告里的搭档。
 
-**根因：** `scripts/lib/scorers/ladder.mjs` 从下往上走每一档时，会把每一档里所有没通过的检查项
-都收进 gap 列表，并不会因为更低一档的条件（文件是否存在）已经没通过就停止收集。
-`scripts/lib/scorers/state.mjs` 的第 2 档无条件检查 `fresh` 和 `hasAllThreeSections`，哪怕第 1 档
-的 `hasProgressFile` 已经是 false——所以没有进度文件的仓库确实按预期打了 0 分，但报告里还是把
-第 2 档的 gap id 一起带出来了。
+- **`loop.no-entrypoint` 没有配套的固定 fixture。** v1.1 新加的这个 gap id，对应的是"循环写在
+  文档里、却没有任何东西真的触发它"（`scripts/lib/scorers/loop.mjs` 的第 2 档），目前只靠
+  `tests/scorers/loop.test.mjs` 里的单元测试覆盖——那些测试是在内存里现拼一个 `files: {...}`
+  对象来搭仓库，不是真的仓库。三个已提交的 fixture 都到不了这个状态：直接读
+  `fixtures/good-repo`、`fixtures/mid-repo`、`fixtures/bad-repo` 就能确认，它们的文档文件
+  （`AGENTS.md`/`CLAUDE.md`/`README.md`）里根本没有出现过循环相关的关键词，连第 1 档都过不了，
+  更别说停在"有描述、没入口"的第 2 档。开发这处修复（`3709854`）时用来复现问题的两次实测，也都是
+  手工现搭的临时目录仓库，跑完测试就删了，从没进过仓库。补一个第五个 fixture——一份 `AGENTS.md`
+  描述了自主循环，但没有 `loop/` 目录、没有定时触发的工作流、`harness.config.json` 也没声明
+  `loop` 字段——就能让 `loop.none` / `loop.no-entrypoint` 这次拆分从此有回归测试兜底，跟另外
+  三个 fixture 已经兜住的其余阶梯一样。
 
-**为什么 v1 没修：** Task 14 评审时就有人指出过，当时的协调者明确判定不在 v1 范围内——这属于
-范围变更（要动渲染/分组逻辑，不是纯粹的 bug），而这个项目的常设规则是范围变更必须先确认。当时
-就记录为"要写进 Task 23 的 ROADMAP v1.1"。
-
-**候选修法方向**（还没定案，需要单独走一遍设计）：要么 (a) 在渲染阶段，如果某个子系统"文件不
-存在"这个第 1 档 gap 已经出现了，就抑制掉它第 2 档及以上的 gap；要么 (b) 直接改 gap 文案本身，
-让 `state.progress-stale` 的措辞不再暗示文件一定存在（比如改成"过期或缺失"而不是"已过期"）。
-(a) 更接近 Task 14 评审讨论时给出的建议方向。
-
-### 2. 抽一个共享的 `MAX_SCORE` 常量
-
-**问题在哪：** 每个子系统的满分档位（`4`）不是单一来源，而是到处重复写的字面量。直接读代码
-确认：
-
-- `scripts/lib/report.mjs:48` 和 `:64` 各自独立写了一遍 `max: 4` / `SUBSYSTEMS.length * 4`。
-- 六个评分器（`scripts/lib/scorers/{instructions,tools,environment,state,feedback,loop}.mjs`）
-  每一个都在自己的 `ladder([...])` 调用里把满分档写成 `{ score: 4, checks: [...] }`——又是六份
-  各自独立、背后没有共享常量的"4"。
-
-**为什么 v1 没修：** 这个项目已经被"手工同步的平行列表"咬过四次了（比如下面第 4 条的
-`PRUNE_DIRS`/`DEFAULT_IGNORE`，还有 `environment.mjs` 自己注释里记录的
-`docker.runtimePins`/`manifest` 和 `CONTAINER_FILES` 那次修复）。抽一个共享的 `MAX_SCORE`
-常量是同一类修复，但要同时改 `report.mjs` 加六个评分器文件，改动面确实不小——当时发现这个问题
-的 Task 14 只负责 `report.mjs` 一个文件，判定不在那次任务范围内是对的。
-
-### 3. `install.sh` 应该把 checkout 的绝对路径替换进已安装的 skill 文本里
-
-**问题在哪：** `install.sh` 只把 skill 的 markdown 文本复制进它找到的那些 agent 生态目录，从来
-不复制 `scripts/`。实测运行确认：
-
-```
-$ sh install.sh
--> .claude/skills
-installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-```
-
-五个目标生态（`.claude/skills`、`.cursor/skills`、`.codex/skills`、`.gemini/skills`、
-`.agent/skills`）没有一个会拿到类似 `${CLAUDE_PLUGIN_ROOT}` 的变量，所以 skill 文档里写的
-`node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` 命令在跑完一次普通的 `install.sh` 之后没法解析
-——装好的 skill 只能在第一次真的要跑命令的时候，反过来问用户"仓库 checkout 在哪"。用户可见的
-版本见 [README 的安装一节](README.zh-CN.md#安装)。
-
-**为什么 v1 没修：** Task 22 时就指出过这是一个确实可以做的真修复——`install.sh` 本来就已经
-算出了自己的源码 checkout 路径（`HARNESS_SRC`/`$(dirname "$0")`），完全可以把这个绝对路径替换
-进已安装的 `SKILL.md` 文本里，顶替 `${CLAUDE_PLUGIN_ROOT}` 占位符——但这属于改变 `install.sh`
-行为的范围变更，而本任务被明确要求不许动 `install.sh`，而且这也正是那种需要专门坐下来想清楚
-"插件形态 vs 非插件形态该怎么分发"的问题，不该是文档任务的副产品。
-
-### 4. 模板文件不应该满足它自己作为模板的那条检查
-
-**问题在哪：** `state.mjs` 是按任意深度去找交接类文件的：
-
-```js
-function existsAnyDepth(ctx, name) {
-  return ctx.exists(name) || ctx.list([`**/${name}`]).length > 0;
-}
-```
-
-"任意深度"这个设计本身是对的——一个把交接文档放在 `docs/session-handoff.md` 的仓库，
-理应拿到这一分。错的是：**一份还没填写的模板，也被当成了真实产出物。** 在本仓库实测：
-
-```
-session-handoff.md       -> ["session-handoff.md",
-                             "templates/en/session-handoff.md",
-                             "templates/zh/session-handoff.md"]
-clean-state-checklist.md -> ["clean-state-checklist.md",
-                             "templates/en/clean-state-checklist.md",
-                             "templates/zh/clean-state-checklist.md"]
-```
-
-也就是说，一个仅仅把这些模板 vendor 进去的仓库——或者它自己的 `templates/` 目录里恰好有个同名
-文件——不用真写一份交接文档，就能过掉 `state.no-handoff`。对一把"价值全在于不给不存在的东西
-发分"的尺子来说，这是实打实的误判。
-
-**关于本仓库自己的分数：** 这个漏洞没有把我们的分数抬高。根目录下的 `session-handoff.md` 和
-`clean-state-checklist.md` 是真实填写过的文件（在上面的列表里排在第一个），所以不管模板在不在，
-状态子系统都是 4 分。这一点是在挂出 L5 徽章之前专门查过的——一份自己给自己注水的体检，
-比没有徽章更糟。
-
-**为什么 v1 没修：** 修法不是简单地"把 `templates/` 排除掉"——那只是给一个目录名开特例，
-真正的问题（占位符被当成内容）还在。更像样的做法大概是：让评分器拒绝那些仍然含有未填写
-`FILL:` 占位符的文件。但这会改变好几个评分器里"文件存在"的含义，需要配套的 fixture 覆盖。
-这是 Task 24 的实现者发现并主动报告的，而不是闷声享受这几分。
+- **`suppressedHighNote` 每次渲染都会调用两次 `allGaps`。** `scripts/lib/report.mjs` 里的
+  `suppressedHighNote` 先调用一次 `allGaps(report)` 筛出被隐藏的高危 gap，又调用一次
+  `allGaps(report)` 建立 id 到标题的映射表，用来在披露文案里点名。以目前的 rubric 规模——6 个
+  子系统、39 条 gap，每次 `assess` 只渲染一次——这点开销可以忽略，所以没有动它。记在这里，只是
+  为了防着以后 rubric 规模涨一个数量级、这点开销不再是免费的那一天。
 
 ## v1.1 之后：更大的方向
 
@@ -140,7 +86,8 @@ clean-state-checklist.md -> ["clean-state-checklist.md",
 - **`PRUNE_DIRS` 和 `DEFAULT_IGNORE` 依然是两份手工同步的列表。** `scripts/lib/scan.mjs:7` 和
   `:10` 分别定义了 `DEFAULT_IGNORE`（glob 模式）和 `PRUNE_DIRS`（一个装目录名的 `Set`）；改一份
   不改另一份，可能会悄悄让目录遍历的过滤重新出现漏洞。直接读文件确认依然存在。从 Task 4 起就记
-  过这个风险，一直不算紧急，没有并进上面第 2 条，但本质上是同一类问题。
+  过这个风险，跟 v1.1 里已经修好的 `MAX_SCORE` 重复问题本质上是同一类"手工同步列表"风险，
+  但没有并进那次修复，依然是个未解决的问题。
 - **示例 fixtures 里有一处外观上的不一致。** `fixtures/good-repo/go.sum` 和 `fixtures/mid-repo/
   go.sum` 都锁定了 `github.com/lib/pq`，但对应的 `go.mod` 里没有匹配的 `require` 行，
   `main.go` 里也没有导入它。直接读两份文件确认依然存在。这两个 fixture 本来就是为评分逻辑准备
@@ -152,3 +99,9 @@ clean-state-checklist.md -> ["clean-state-checklist.md",
 完整表述见 [README 的安全一节](README.zh-CN.md#安全)和 `skills/harness-verify/SKILL.md` 的
 Limitations 一节。这些写在那两处而不是这里，是因为经过七轮对抗式评审之后，这个项目自己的结论是
 ：下一步该做的是如实披露，而不是再打一轮补丁。
+
+"模板没填写"这项检查里的逐字节比较也有同一类天花板：CRLF 换行的检出、结尾换行不一致、任意一个
+字符的改动、模板正文跨版本变过，都会让它失效；而在只带 `scripts/`、没有 `templates/` 的安装形
+态里，它会静默变成空操作。完整表述写在
+[`references/rubric.zh-CN.md`](references/rubric.zh-CN.md#模板没填写这项检查抓不到什么)，
+紧挨着它所限定的那条规则，不在这里重复。

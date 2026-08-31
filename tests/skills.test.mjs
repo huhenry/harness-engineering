@@ -160,6 +160,25 @@ test('workflow commands resolve and actually execute when the skill is installed
     );
     assert.equal(bare.length, 0, `${s}: uses the undocumented bare $CLAUDE_PLUGIN_ROOT; only \${CLAUDE_PLUGIN_ROOT} is substituted`);
 
+    // The placeholder may appear ONLY immediately before `/scripts/`, i.e.
+    // only as part of a command someone is meant to run. Both substituters
+    // (Claude Code at skill-load time, install.sh's `sed ... g` at install
+    // time) rewrite every occurrence indiscriminately, so any occurrence
+    // sitting in ordinary prose gets rewritten too. A shipped version of
+    // these skills explained the mechanism with the literal placeholder in
+    // the sentence, and a real install turned it into "it only works in the
+    // braced <absolute path of the checkout> form" -- prose that is simply
+    // false and that no test looked at. Prose must name the placeholder
+    // without writing it (e.g. "the braced CLAUDE_PLUGIN_ROOT placeholder").
+    for (const m of raw.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}/g)) {
+      const following = raw.slice(m.index + m[0].length, m.index + m[0].length + 9);
+      assert.equal(
+        following, '/scripts/',
+        `${s}: \${CLAUDE_PLUGIN_ROOT} at offset ${m.index} is not followed by "/scripts/" -- `
+        + 'substitution rewrites every occurrence, so a placeholder outside a script path corrupts the prose around it',
+      );
+    }
+
     const body = substitutePluginRoot(raw, ROOT);
     assert.ok(!body.includes('CLAUDE_PLUGIN_ROOT}'), `${s}: a placeholder survived substitution`);
 

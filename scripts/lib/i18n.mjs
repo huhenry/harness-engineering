@@ -15,6 +15,7 @@ export const MESSAGES = {
     'report.title': 'Harness Assessment Report',
     'report.needsEvidence': 'capped — run `verify --run` for evidence',
     'report.noGaps': 'No gaps found.',
+    'report.suppressedHigh': 'High-severity gaps counted but not shown: {count}. Each one presupposes a gap that IS shown ({titles}), so start there — but they count toward assess\'s exit code all the same, and --json lists every one of them tagged with suppressedBy.',
     'report.gapsHeading': 'Gaps by ROI',
     'report.subsystemsHeading': 'Subsystem Scores',
     'report.colSubsystem': 'Subsystem',
@@ -113,8 +114,21 @@ export const MESSAGES = {
     'gap.state.feature-list-invalid.why': "A feature list that fails its own schema breaks any tooling that reads it, and the agent can no longer trust the declared scope of work.",
     'gap.state.feature-list-invalid.fix': 'Validate feature_list.json against feature_list.schema.json and fix entries until it validates clean.',
     'gap.state.no-handoff.title': 'No session handoff doc',
-    'gap.state.no-handoff.why': "Without a handoff protocol, context that only ever lived in one session's head disappears the moment that session ends.",
-    'gap.state.no-handoff.fix': 'Add a session-handoff.md template and a clean-state-checklist.md the agent fills in before ending a session.',
+    'gap.state.no-handoff.why': "Missing handoff artefacts: {artefacts}. Without a handoff protocol, context that only ever lived in one session's head disappears the moment that session ends.",
+    'gap.state.no-handoff.fix': 'Add {artefacts}, and fill in what actually happened before ending the session.',
+    'gap.state.handoff-unfilled.title': 'Handoff doc exists but is still an unfilled template',
+    // Deliberately does NOT assert a single reason. The check that fires
+    // this gap answers one question -- "does any copy read as filled in?" --
+    // and three different states answer it no: an unreplaced FILL: marker,
+    // the shipped template carrying nothing but scaffold's own provenance
+    // line (byte-identity is compared AFTER that line is stripped, so a
+    // scaffolded file is never literally byte-identical), and a file this
+    // tool could not read at all. Naming only the first two made the
+    // sentence false in the single most common state a user meets this gap
+    // in -- a `scaffold --apply`'d clean-state-checklist.md, which has no
+    // FILL: marker in either language and is not byte-identical either.
+    'gap.state.handoff-unfilled.why': "Handoff artefacts that exist but were never filled in: {artefacts}. Every copy found either still carries an unreplaced FILL: marker, or is this project's shipped template with nothing added but scaffold's own provenance line, or could not be read at all — so nothing on disk records what actually happened.",
+    'gap.state.handoff-unfilled.fix': 'Replace every FILL: placeholder and any leftover template text in {artefacts} with what actually happened this session. Re-running scaffold cannot do that — it only ever writes new files and never edits one that already exists, so every path named here would be left exactly as it is. If this tool could not read what is on disk, fix the permissions first.',
     'gap.state.lifecycle-undocumented.title': 'State file lifecycle undocumented',
     'gap.state.lifecycle-undocumented.why': "Without a documented lifecycle, agents don't know when to create, update or retire each state file, so the whole state layer drifts and stops being trustworthy.",
     'gap.state.lifecycle-undocumented.fix': "Document each state file's lifecycle — who updates it, at what point, and when it gets archived or reset.",
@@ -205,6 +219,9 @@ export const MESSAGES = {
     'gap.loop.none.title': 'No agentic loop defined',
     'gap.loop.none.why': "Without a defined loop pattern, agent sessions run ad hoc — there's no structure for how work gets proposed, checked or repeated.",
     'gap.loop.none.fix': 'Adopt a documented loop pattern (goal loop, timer loop, or maker-checker loop) matching how the project wants agents to work.',
+    'gap.loop.no-entrypoint.title': 'Loop is described but nothing runs it',
+    'gap.loop.no-entrypoint.why': 'The docs describe a loop, but nothing in the repository says where it starts — no scheduled workflow, no loop/ documents, no loop field in harness.config.json. Anyone who wants to run it has to reconstruct it from prose, while readers reasonably assume something already runs it.',
+    'gap.loop.no-entrypoint.fix': 'Give the loop an entry point. Only one of the three this check accepts actually executes anything — a scheduled CI workflow. The other two, per-pattern documents under loop/ and a loop field in harness.config.json, record where the loop is defined so a person or an agent can find it and start it; they do not run it for you.',
     'gap.loop.no-stop-condition.title': 'No stop condition for the loop',
     'gap.loop.no-stop-condition.why': 'Without an explicit stop condition, an agent loop can run indefinitely or stop arbitrarily — wasting budget in one direction, quitting before the goal is met in the other.',
     'gap.loop.no-stop-condition.fix': 'Define and document the exact condition — pass criteria, target state, or explicit signal — that ends the loop.',
@@ -245,6 +262,7 @@ export const MESSAGES = {
     'report.title': 'Harness 体检报告',
     'report.needsEvidence': '已封顶 —— 跑 `verify --run` 补证据',
     'report.noGaps': '未发现差距。',
+    'report.suppressedHigh': '已计入、但没有在这里列出的高危 gap：{count} 条。每一条都以某个已经列出的 gap 为前提（{titles}），所以先从那些入手——但它们照样计入 assess 的退出码，用 --json 能看到全部，每条都带 suppressedBy 标记。',
     'report.gapsHeading': '差距清单（按 ROI 排序）',
     'report.subsystemsHeading': '各子系统得分',
     'report.colSubsystem': '子系统',
@@ -343,8 +361,14 @@ export const MESSAGES = {
     'gap.state.feature-list-invalid.why': '功能清单不符合自己的 schema 时，任何读取它的工具都会出错，agent 也没法再信任清单里声明的工作范围。',
     'gap.state.feature-list-invalid.fix': '用 feature_list.schema.json 校验 feature_list.json，修正条目直到校验通过。',
     'gap.state.no-handoff.title': '缺少会话交接文档',
-    'gap.state.no-handoff.why': '没有交接机制时，只存在于某一次会话脑子里的上下文，会在那次会话结束的瞬间彻底消失。',
-    'gap.state.no-handoff.fix': '加一份 session-handoff.md 模板和 clean-state-checklist.md，让 agent 在结束会话前填写。',
+    'gap.state.no-handoff.why': '缺失的交接产物：{artefacts}。没有交接机制时，只存在于某一次会话脑子里的上下文，会在那次会话结束的瞬间彻底消失。',
+    'gap.state.no-handoff.fix': '把 {artefacts} 补上，并在结束会话前写清楚这次实际发生了什么。',
+    'gap.state.handoff-unfilled.title': '交接文档存在，但还是没填写的模板',
+    // 与 en 同理：这里刻意不断言单一原因，因为触发它的实际状态有三种
+    // （未替换的 FILL: 标记、剥掉 scaffold 自己那行溯源注释之后与出厂模板
+    // 逐字节相同、以及这个工具根本读不到该文件）。
+    'gap.state.handoff-unfilled.why': '存在但没有填写的交接产物：{artefacts}。找到的每一份要么还带着未替换的 FILL: 标记，要么就是本项目的出厂模板、只多了 scaffold 自己加的那行溯源注释，要么这个工具根本读不到它——总之磁盘上没有任何东西记录了实际发生的事。',
+    'gap.state.handoff-unfilled.fix': '把 {artefacts} 里每一处 FILL: 占位符和残留的模板文字，换成这次会话实际发生的内容。重新跑 scaffold 做不到这件事——它只会写新文件，从不编辑已经存在的文件，上面点名的每个路径都会原样不动。如果是这个工具读不到文件，先修好它的权限。',
     'gap.state.lifecycle-undocumented.title': '状态文件生命周期未说明',
     'gap.state.lifecycle-undocumented.why': '没有文档说明生命周期时，agent 不知道每份状态文件该在什么时候创建、更新或废弃，整个状态层就会逐渐失真、失去可信度。',
     'gap.state.lifecycle-undocumented.fix': '写清楚每份状态文件的生命周期——谁在什么节点更新它，什么时候归档或重置。',
@@ -430,6 +454,9 @@ export const MESSAGES = {
     'gap.loop.none.title': '未定义 agent 循环模式',
     'gap.loop.none.why': '没有定义循环模式时，agent 会话就是走一步看一步——工作怎么提出、怎么检查、怎么重复循环，完全没有结构。',
     'gap.loop.none.fix': '采用一种文档化的循环模式（goal loop、timer loop 或 maker-checker loop），匹配项目希望 agent 工作的方式。',
+    'gap.loop.no-entrypoint.title': '循环写在文档里，但没有任何东西真的跑它',
+    'gap.loop.no-entrypoint.why': '文档里描述了循环，但仓库里没有任何东西说明它从哪里开始——没有定时执行的 workflow，没有 loop/ 下的文档，harness.config.json 里也没有 loop 字段。想跑它的人只能从文字里自己还原一遍，而读到文档的人会理所当然地以为已经有东西在跑了。',
+    'gap.loop.no-entrypoint.fix': '给这个循环一个入口。这项检查接受的三种信号里，只有一种真的会执行东西——定时触发的 CI workflow。另外两种（`loop/` 目录下的分模式文档、harness.config.json 里的 loop 字段）只是把循环定义在哪里记下来，让人或 agent 能找到它、把它跑起来，它们本身不会替你跑。',
     'gap.loop.no-stop-condition.title': '循环缺少停止条件',
     'gap.loop.no-stop-condition.why': '没有明确的停止条件时，agent 循环要么无限跑下去浪费预算，要么在目标还没达成时就随意停了。',
     'gap.loop.no-stop-condition.fix': '明确并写下结束循环的具体条件——通过标准、目标状态，或明确的终止信号。',

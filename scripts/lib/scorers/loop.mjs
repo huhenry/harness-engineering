@@ -1,5 +1,6 @@
 import { ladder } from './ladder.mjs';
 import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
+import { MAX_SCORE } from '../rubric.mjs';
 
 export const id = 'loop';
 
@@ -66,19 +67,25 @@ export function score({ ctx, config }) {
   const hasRollback = ROLLBACK_RE.test(docs);
 
   const { score, gapIds } = ladder([
-    // Rungs 1 and 2 intentionally share 'loop.none' (see rubric.mjs and
-    // Task 12's brief): they're two halves of the same underlying fact ("is
-    // there a loop pattern here at all — described, and actually wired
-    // up"), not two independent gaps a user would fix separately.
-    // ladder() already dedupes by gapId, so a repo failing both rungs still
-    // only sees this id once in gapIds.
+    // Rungs 1 and 2 used to share 'loop.none' on the theory that they were
+    // two halves of one fact. They are not, and the difference is
+    // load-bearing: rung 1 asks whether a loop pattern is described at all,
+    // rung 2 whether anything actually invokes the one that is. A repo that
+    // documents an autonomous nightly loop but never wires it up fails only
+    // rung 2 — and it is precisely the repo that most needs to hear that its
+    // loop has no stop condition and no budget cap. While both rungs emitted
+    // the same id, `presupposedBy: 'loop.none'` could not tell the two
+    // states apart and silenced those high-severity gaps for that repo too.
+    // Separate ids; rubric.mjs suppresses loop.no-entrypoint (and the
+    // rung-3+ properties) beneath loop.none, which restores the old
+    // single-id output for a repo that fails both.
     { score: 1, checks: [{ ok: hasKeyword, gapId: 'loop.none' }] },
-    { score: 2, checks: [{ ok: hasEntryPoint, gapId: 'loop.none' }] },
+    { score: 2, checks: [{ ok: hasEntryPoint, gapId: 'loop.no-entrypoint' }] },
     { score: 3, checks: [
       { ok: hasStopCondition, gapId: 'loop.no-stop-condition' },
       { ok: hasBudgetCap, gapId: 'loop.no-budget-cap' },
     ] },
-    { score: 4, checks: [
+    { score: MAX_SCORE, checks: [
       { ok: hasMakerChecker, gapId: 'loop.no-maker-checker' },
       { ok: hasRollback, gapId: 'loop.no-rollback' },
     ] },

@@ -1,9 +1,30 @@
-import { SUBSYSTEMS, gapById } from './rubric.mjs';
+import { SUBSYSTEMS, MAX_SCORE, gapById } from './rubric.mjs';
 import { computeRoi, sortGaps } from './roi.mjs';
 import { computeLevel } from './level.mjs';
 import { t } from './i18n.mjs';
 
 export const SCHEMA_VERSION = 1;
+
+/**
+ * Translate one gap message and prove nothing was left unsubstituted.
+ *
+ * A gap's `why`/`fix` may name the specific artefact that caused it (see
+ * state.mjs's `gapVars`). `t()` deliberately leaves an unknown `{name}`
+ * alone rather than throwing, which is right for its own contract but wrong
+ * here: a scorer that emits a gap and forgets its vars would ship the
+ * literal text "{artefacts}" to the user, silently. Materialization is the
+ * one place that can see the finished string, so it is the place to refuse.
+ * Same reasoning as `t()` throwing on a missing key rather than rendering
+ * the key itself.
+ */
+function materialize(key, lang, vars) {
+  const text = t(key, lang, vars);
+  const leftover = text.match(/\{(\w+)\}/);
+  if (leftover) {
+    throw new Error(`Unsubstituted placeholder {${leftover[1]}} in ${key} — the scorer must supply it via gapVars`);
+  }
+  return text;
+}
 
 /**
  * Assemble the machine-readable report (spec 6.3's `harness-report.json`).
@@ -30,22 +51,44 @@ export function buildReport({
 
   const subsystems = SUBSYSTEMS.map((id) => {
     const r = results[id];
+    // A gap whose precondition gap is also present in this same subsystem is
+    // MARKED, never dropped — reporting "Progress file is stale" alongside
+    // "No progress file" tells the user about a file the report just said
+    // does not exist, so the human report hides it, but it is still a
+    // failing check and everything that acts on facts must still see it.
+    //
+    // Marking rather than filtering is the whole design. The first version
+    // filtered here, and two consumers downstream read the filtered list
+    // without anyone noticing: `assess`'s exit code (a repo with a
+    // suppressed high-severity gap silently started exiting 0) and
+    // `scaffold`'s plan. Both were reading `subsystems[].gaps` because that
+    // is the obvious thing to read. Now the obvious thing to read is
+    // complete, and hiding is an explicit opt-in that only renderMarkdown
+    // takes — so the failure mode inverts: forgetting about suppression
+    // over-reports rather than under-reports.
+    const present = new Set(r.gapIds);
     const gaps = sortGaps(r.gapIds.map((gapId) => {
       const def = gapById(gapId);
+      const vars = r.gapVars?.[gapId] ?? {};
+      const pre = def.presupposedBy;
       return {
         id: def.id,
         severity: def.severity,
-        title: t(def.titleKey, lang),
-        why: t(def.whyKey, lang),
-        fix: t(def.fixKey, lang),
+        title: materialize(def.titleKey, lang, vars),
+        why: materialize(def.whyKey, lang, vars),
+        fix: materialize(def.fixKey, lang, vars),
         scaffoldable: def.scaffoldable,
         roi: computeRoi(def, r.score),
+        // The gap id that makes this one not worth showing a human, or
+        // null. Never affects the score, and never affects anything that
+        // decides what to do — only what gets printed.
+        suppressedBy: pre !== null && present.has(pre) ? pre : null,
       };
     }));
     return {
       id,
       score: r.score,
-      max: 4,
+      max: MAX_SCORE,
       cappedByEvidence: r.cappedByEvidence,
       evidence: r.evidence,
       gaps,
@@ -61,7 +104,7 @@ export function buildReport({
     repo,
     generatedAt: now.toISOString(),
     stack,
-    score: { total, max: SUBSYSTEMS.length * 4 },
+    score: { total, max: SUBSYSTEMS.length * MAX_SCORE },
     // unmetGates is a spec 6.3 superset, not a conflict with it: Task 15's
     // `assess --min-level` needs to say what's blocking the next gate, and
     // computeLevel already produces exactly that list — carrying it through
@@ -80,6 +123,30 @@ export function buildReport({
     },
     subsystems,
   };
+}
+
+/**
+ * Every gap the scorers found, flattened across subsystems and sorted once
+ * globally by ROI, each tagged with the subsystem it came from.
+ *
+ * This is what anything DECIDING something must call — `assess`'s exit code,
+ * `scaffold`'s plan — because suppression is a presentation choice and a
+ * suppressed gap is still a failing check. Reading `report.subsystems`
+ * directly is not wrong, it is just easy to get wrong; routing both
+ * behavioural consumers through one named function is what
+ * tests/report.test.mjs can then pin.
+ */
+export function allGaps(report) {
+  return sortGaps(report.subsystems.flatMap((s) => s.gaps.map((gap) => ({ ...gap, subsystemId: s.id }))));
+}
+
+/**
+ * The subset a human report shows: everything except gaps whose precondition
+ * is in the same report. Presentation only — see `allGaps` above for the
+ * list anything behavioural must use instead.
+ */
+export function visibleGaps(report) {
+  return allGaps(report).filter((gap) => gap.suppressedBy === null);
 }
 
 /** One markdown table row per subsystem: name, score/max, evidence-cap marker. */
@@ -106,16 +173,47 @@ function renderSubsystemTable(report, lang) {
  * ROI, since one subsystem's low-ROI gap would land ahead of the next
  * subsystem's high-ROI gap. Flatten first, then sort once, globally.
  */
+/**
+ * One line naming the high-severity gaps this report is hiding, or nothing
+ * at all.
+ *
+ * Suppression has no severity dimension — a `low` precondition can silence a
+ * `high` gap, and `loop.none` (low) silencing `loop.no-stop-condition` and
+ * `loop.no-budget-cap` (both high) is a live, ordinary case. That produced a
+ * report with no high-severity findings printed beside an exit code of 1,
+ * which README defines as "high-severity gaps found". The exit code is
+ * right; what was missing was the report admitting it had left something
+ * out.
+ *
+ * Returns [] — not an empty string — when there is nothing to say, so a
+ * report without suppressed high-severity gaps is byte-identical to what it
+ * was before this existed. Suppressed gaps below `high` stay silent
+ * deliberately: they are the noise this mechanism was built to remove.
+ */
+function suppressedHighNote(report, lang) {
+  const hidden = allGaps(report).filter((g) => g.suppressedBy !== null && g.severity === 'high');
+  if (hidden.length === 0) return [];
+  const titleOf = new Map(allGaps(report).map((g) => [g.id, g.title]));
+  // Several different preconditions can be hiding high-severity gaps in one
+  // report (loop.none and feedback.no-declared-commands routinely do), so
+  // every distinct one is named. Deduped in ROI order, so the sentence is
+  // deterministic and leads with the one worth fixing first.
+  const implied = [...new Set(hidden.map((g) => g.suppressedBy))].map((id) => titleOf.get(id) ?? id);
+  return [t('report.suppressedHigh', lang, { count: hidden.length, titles: implied.join(', ') }), ''];
+}
+
 function renderGapList(report, lang) {
   const lines = [`## ${t('report.gapsHeading', lang)}`, ''];
-  const allGaps = sortGaps(
-    report.subsystems.flatMap((s) => s.gaps.map((gap) => ({ ...gap, subsystemId: s.id }))),
-  );
-  if (allGaps.length === 0) {
+  // The one place suppression is allowed to take effect.
+  const shown = visibleGaps(report);
+  if (shown.length === 0) {
+    // Unreachable with a non-empty hidden set: a precondition gap is never
+    // suppressed by itself, so anything hidden implies something shown.
     lines.push(t('report.noGaps', lang), '');
     return lines;
   }
-  for (const gap of allGaps) {
+  lines.push(...suppressedHighNote(report, lang));
+  for (const gap of shown) {
     const subsystemName = t(`subsystem.${gap.subsystemId}`, lang);
     lines.push(`### ${subsystemName} · ${gap.title} (ROI ${gap.roi})`, '');
     lines.push(`- ${t('report.why', lang, { text: gap.why })}`);

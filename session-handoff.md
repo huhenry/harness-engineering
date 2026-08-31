@@ -6,28 +6,68 @@ that only ever lived in one session's head can survive into the next one.
 
 ## Previous session
 
-Task 24 (dogfooding, the final task of this project): ran `scripts/assess.mjs` against this
-repository itself and measured L0, 3/24 (`instructions >= 2` unmet, no lockfile/runtime pin, no
-progress file, no declared verification commands). Used `scripts/scaffold.mjs . --lang en --apply`
-to generate the missing harness files, filled every unfilled placeholder comment with real content
-about this repository, wrote `.nvmrc`, `package-lock.json` (via `npm install --package-lock-only`),
-a real `init.sh` bootstrap script, `.devcontainer/devcontainer.json`, `harness-badge.json`, and
-`.github/workflows/ci.yml` (test matrix on Node 20/22 + a `self-assess` job that runs
-`verify --run` then `assess --min-level 4` then refreshes the badge on `main`). Ran
-`node scripts/verify.mjs . --run` for real against the declared `bootstrap`/`test`/`lint` commands
-and `node scripts/assess.mjs . --min-level 4` against the resulting evidence. Also ran the
-end-to-end drill on a real, unrelated multi-language repository (assess + scaffold dry-run against
-a copy, then diffed against the original to prove both tools left it untouched).
+v1.1 hardening is finished on the `v1.1-hardening` branch and has been through a whole-branch
+review plus one fix wave. It is **not merged to `main` yet** -- merging is the next mechanical step.
+All four `ROADMAP.md` v1.1 candidates are closed. In execution order: `scripts/lib/placeholder.mjs`
+was added and wired into the State scorer so an unfilled template no longer satisfies the handoff
+rung -- this surfaced a genuine defect (`scaffold` prepends a provenance stamp that defeated the
+byte-identity check; fixed by stripping the stamp before comparing) and one scope expansion, a new
+gap id `state.handoff-unfilled`, so a scaffolded-but-not-yet-filled-in handoff reports "exists but
+unfilled" rather than the misleading "no handoff doc". The report now hides a gap that presupposes
+a file another gap already says is missing. That claim -- "rendering only" -- is the one this
+milestone got wrong twice, so read how it is enforced rather than trusting the phrase: every gap
+stays in the report carrying `suppressedBy`, only `renderMarkdown` drops the marked ones, and both
+things that DECIDE anything (`assess`'s exit code, `scaffold`'s plan) go through `report.mjs`'s
+`allGaps`, which never filters. A source-level test asserts neither entry point reads a gap list by
+hand. `install.sh` substitutes the checkout's absolute path into installed `SKILL.md` files, scoped to
+skills actually copied from the source checkout after a reviewer caught the first draft rewriting a
+pre-existing third-party skill's placeholder too. Eight hand-written top-rung `4` literals
+collapsed into one `MAX_SCORE` constant in `rubric.mjs` -- pure refactor.
+
+The review's fix wave then closed everything it raised: the handoff gaps now name the specific
+artefact each one is about (the mixed absent+unfilled report used to tell the user to open a file
+it had just said was missing), `state.handoff-unfilled`'s explanation no longer asserts a reason it
+cannot know, gap suppression grew from 2 declared pairs to 11 (four more subsystems) under a
+written bar for adding any more, `install.sh`'s substitution no longer corrupts the skills' own
+explanation of the placeholder, and the ROADMAP records what the placeholder rule still does not
+cover.
+
+A re-review of that wave then caught two regressions it had introduced, both since fixed and both
+worth remembering. Suppression had been implemented by FILTERING the gap list, and two consumers
+were quietly reading the filtered version -- `assess`'s exit code inverted from 1 to 0 for an
+ordinary repository whose only high-severity gaps happened to be suppressed, with no scorer change
+behind it. And `loop.none` was emitted from two rungs that mean different things ("no loop is
+described" and "a loop is described but nothing invokes it"), so attaching the loop presuppositions
+to that one id also silenced the stop-condition and budget-cap gaps for a repository that documents
+an autonomous loop and simply never wired it up -- the repository that most needs to hear them.
+Rung 2 now has its own gap id, `loop.no-entrypoint`.
+
+Baseline fixture scores are unchanged (`bad-repo` 0/24 L0, `mid-repo` 11/24 L2, `good-repo` 16/24
+L3) and this repository's own self-assessment is still 23/24 L5.
 
 ## Next session
 
-There is no more planned work in this implementation plan -- Task 24 was the last of 24. If a
-session picks this up next, start by reading `PROGRESS.md` and `feature_list.json` (all 24 items
-are `done`), then `ROADMAP.md` for what was deliberately deferred (the v1.1 candidates and the
-"beyond v1.1" directions). Acceptance criterion 6 (loading this repository as a Claude Code plugin
-via `/plugin marketplace add <path>` and confirming all five `harness-*` skills are invokable) is
-the one criterion this task could not verify itself -- it needs interactive GUI steps a human has
-to run; the exact steps are in the task-24 report's section D.
+Merge `v1.1-hardening` into `main` first. Then v1.2: `harness diff` (score movement between two
+assessments of the same repository) and a GitHub Action that comments the score delta on a pull
+request. Both are listed under "Beyond v1.1" in `ROADMAP.md` and neither is started.
+
+Two things carried forward that must not get lost:
+
+- **`instructions.unfilled-template`.** `placeholder.mjs` is wired into `state.mjs` only. Wiring it
+  into `instructions.mjs` needs a new gap id, i18n copy in both languages, a
+  `references/rubric.md`/`.zh-CN.md` update, and a new fixture; it is its own task, not a tack-on.
+  `isFilledArtifact(ctx, rel)`'s signature is already general enough to reuse without rework. It is
+  the first step of the "Still open from v1.1" ROADMAP item, which is where the full statement of
+  what the placeholder rule does *not* yet cover lives.
+- **Two deliberately deferred items, both recorded rather than fixed.** `placeholder.mjs` treats an
+  unreadable file the same as an unfilled one; the behaviour stays (it errs toward denying credit)
+  and the gap text was reworded so it no longer claims to know which of the two it saw. And the
+  refactor guard in `tests/rubric.test.mjs` matches `score: 4` but not `score : 4` with a space --
+  it catches the likelier regression, and the worst case is cosmetic, so it was left alone.
+
+Acceptance criterion 6 from the original dogfooding task (loading this repository as a Claude Code
+plugin via `/plugin marketplace add <path>` and confirming all five `harness-*` skills are
+invokable) still needs a human to run it interactively -- unchanged from before v1.1.
 
 ## Blocked
 

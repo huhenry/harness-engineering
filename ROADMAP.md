@@ -4,131 +4,74 @@ This is not a wishlist. Every item below is a real thing found and deliberately 
 this project's own development — not scope invented after the fact to pad this document. Each
 entry says what was found, how it was verified, and why it was not fixed in v1.
 
-The v1.1 candidates were each re-verified against the current code before being listed, so the
-file and line references below are accurate as of this release rather than as of when the item was
-first noticed. The larger directions at the end come from the project's original design document.
+v1.1 shipped all four candidates that used to be tracked in this section: the placeholder rule,
+render-time gap suppression, the shared `MAX_SCORE` constant, and `install.sh` path substitution.
+One of them shipped narrower than the item it closed, and the remainder is recorded below rather
+than deleted with the item. The larger directions after that come from the project's original
+design document.
 
-## v1.1 candidates
+## Still open from v1.1
 
-### 1. Suppress gaps that presuppose a file's existence at render time
+- **An unfilled template still counts as content almost everywhere.** The placeholder rule
+  (`scripts/lib/placeholder.mjs`) is wired into exactly one check: the rung-4 handoff artefacts in
+  `scripts/lib/scorers/state.mjs`. `instructions`, `tools`, `loop` and the other three rungs of
+  `state` still credit a file that says of itself that it is a placeholder. Measured directly by
+  running `scaffold --apply` into an empty directory and then `assess` on it: **12/24, with Tools
+  4/4 and Loop 4/4** — both earned entirely by files nobody has read. `templates/en/Makefile`'s own
+  opening lines say "Every target below is a placeholder until the FILL lines are replaced"; all
+  three `loop/*.md` templates and `evaluator-rubric.md` carry `FILL:` markers; `PROGRESS.md` and
+  `feature_list.json` carry State to 3/4 the same way. This is not a regression — it is the state
+  of the world before v1.1, which was scoped to the handoff rung — but closing it is a real change
+  to what "exists" means across several scorers, not one more call to `isFilledArtifact`: every
+  fixture score and this repository's own self-assessment would have to be re-derived from it.
+  `instructions.unfilled-template` is the natural first step, and it is its own task: a new gap id,
+  bilingual copy, a `references/rubric.md` row in both languages, and a new fixture.
 
-**What's wrong:** When a repository has no progress file at all, the assessment report currently
-shows both "No progress file" (`state.no-progress`) and "Progress file is stale"
-(`state.progress-stale`) in the same output — the second gap presupposes a file that the first gap
-just said doesn't exist. Confirmed directly against `fixtures/bad-repo`:
+- **`scaffold` can close the Loop entry-point rung with an unfilled placeholder.** A specific,
+  measured instance of the item above, recorded separately because it is a rung `scaffold` closes
+  rather than one a user vendors. `loop.no-entrypoint` deliberately carries no templates, but that
+  does not keep `scaffold` away from the rung: `loop.no-maker-checker` writes
+  `loop/maker-checker-loop.md`, and the mere existence of a file under `loop/` satisfies rung 2's
+  entry-point check. Measured on a repository whose `AGENTS.md` mentions an autonomous loop and
+  nothing else — `Loop 1/4` before `scaffold --apply`, **`Loop 2/4` after**, with the file that
+  bought the rung still carrying an unreplaced `FILL:` marker. Nothing about that repository
+  actually runs a loop. Fixing it properly means the entry-point check learning the difference
+  between a document that declares where a loop lives and a trigger that starts one — the same
+  "what does *exists* mean" change as the item above, not a special case.
 
-```
-$ node scripts/assess.mjs fixtures/bad-repo
-...
-### State · No progress file (ROI 10)
-...
-### State · Progress file is stale (ROI 10)
-...
-```
+- **Suppression has no severity dimension.** `presupposedBy` (`scripts/lib/rubric.mjs`) lets a
+  `low`-severity gap suppress `high`-severity ones, and it is not hypothetical: `loop.none` (low)
+  suppresses both `loop.no-stop-condition` and `loop.no-budget-cap` (high) today, verified directly
+  by running `assess` against `fixtures/bad-repo`. v1.1 shipped a disclosure rather than a cure —
+  `suppressedHighNote` (`scripts/lib/report.mjs`) now prints how many high-severity gaps a report is
+  hiding and names every gap that implies them, so a report with an exit code of 1 and no visible
+  high-severity finding no longer reads as a contradiction. The cure was not taken because the
+  obvious one makes things worse: never letting a gap suppress one of higher severity would
+  un-suppress `loop.no-stop-condition` and `loop.no-budget-cap` beside `loop.none` again on that
+  same fixture, reintroducing the exact "a gap presupposes an artefact another gap just said does
+  not exist" contradiction this milestone's suppression mechanism exists to remove. If a severity
+  rule is ever added to `presupposedBy`, the disclosure line should be revisited rather than left
+  standing beside it — they are alternative treatments of the same fact, not a pair that both belong
+  in the shipped report.
 
-**Root cause:** `scripts/lib/scorers/ladder.mjs` collects every failing check at every rung as it
-walks bottom-up, without stopping once a lower rung's own condition (file existence) has already
-failed. `scripts/lib/scorers/state.mjs`'s rung 2 checks `fresh` and `hasAllThreeSections`
-unconditionally, even when `hasProgressFile` (rung 1) is false — so a missing file scores 0 as
-expected, but still accumulates the rung-2 gap ids into the report.
+- **`loop.no-entrypoint` has no permanent fixture.** The gap id v1.1 added for a loop that is
+  described in prose but never wired to anything that runs it (`scripts/lib/scorers/loop.mjs`'s
+  rung 2) is exercised only by unit tests in `tests/scorers/loop.test.mjs` that build the repository
+  in memory, one `files: {...}` object at a time. None of the three committed fixtures reach that
+  state — verified by reading `fixtures/good-repo`, `fixtures/mid-repo` and `fixtures/bad-repo`
+  directly, none of their doc files (`AGENTS.md`/`CLAUDE.md`/`README.md`) contain a loop keyword at
+  all, so none of them even clear rung 1, let alone land on rung 2 with no entry point. Both
+  reproductions used while developing the fix (`3709854`) were hand-built temp-directory repos, torn
+  down at the end of the run, never committed. A fifth fixture — an `AGENTS.md` describing an
+  autonomous loop with no `loop/` directory, no scheduled workflow, and no `harness.config.json`
+  `loop` field — would make the `loop.none` / `loop.no-entrypoint` split regression-proof the same
+  way the other three fixtures already cover the rest of the ladder.
 
-**Why not fixed in v1:** Flagged by a reviewer during Task 14 and explicitly ruled out of scope by
-the controller at the time — it is a scope change (touching render/grouping logic, not a pure bug),
-and this project's standing rule requires confirmation before scope changes. Recorded then as a
-ROADMAP v1.1 item to be written here.
-
-**Candidate fix directions** (not decided — needs its own design pass): either (a) at render time,
-suppress a subsystem's rung-2+ gaps when its rung-1 file-existence gap is already present, or
-(b) change the gap text itself so `state.progress-stale`'s wording no longer implies a file exists
-("stale or missing" instead of "is stale"). (a) is closer to the existing recommendation from the
-Task 14 review discussion.
-
-### 2. A shared `MAX_SCORE` constant
-
-**What's wrong:** The top rung of every subsystem's score (`4`) is a duplicated literal, not a
-single source of truth. Confirmed directly by reading the code:
-
-- `scripts/lib/report.mjs:48` and `:64` each independently write `max: 4` / `SUBSYSTEMS.length * 4`.
-- Every one of the six scorers (`scripts/lib/scorers/{instructions,tools,environment,state,
-  feedback,loop}.mjs`) hardcodes its own top rung as `{ score: 4, checks: [...] }` inside its
-  `ladder([...])` call — six more independent copies of the same "4" with no shared constant behind
-  any of them.
-
-**Why not fixed in v1:** This project has already been bitten four times by hand-synced parallel
-lists drifting apart (see e.g. `PRUNE_DIRS`/`DEFAULT_IGNORE` in item 4 below, and the
-`docker.runtimePins`/`manifest` and `CONTAINER_FILES` fixes described in `environment.mjs`'s own
-comments). A shared `MAX_SCORE` constant is the same class of fix, but touches `report.mjs` plus
-all six scorer files — real, multi-file surface area that was correctly judged out of scope for the
-task that found it (Task 14, which owned `report.mjs` only).
-
-### 3. `install.sh` should substitute the checkout path into installed skill text
-
-**What's wrong:** `install.sh` copies only skill markdown text, never `scripts/`, into whichever
-agent-ecosystem directory it finds. Confirmed by actually running it into a temp directory:
-
-```
-$ sh install.sh
--> .claude/skills
-installed harness-engineering skills
-NOTE: this installs skill text only. scripts/ was NOT copied, and none
-of these target directories give the harness-* skills a working path
-to it (no $CLAUDE_PLUGIN_ROOT-equivalent variable is set here).
-```
-
-None of the five target ecosystems (`.claude/skills`, `.cursor/skills`, `.codex/skills`,
-`.gemini/skills`, `.agent/skills`) get a `${CLAUDE_PLUGIN_ROOT}`-equivalent variable set, so a
-skill's documented `node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` command cannot resolve after a
-plain `install.sh` run — the installed skill has to ask the user for a checkout path the first time
-it actually needs to run a command. See the [README's Install section](README.md#install) for the
-user-facing version of this limitation.
-
-**Why not fixed in v1:** Flagged during Task 22 as a real, buildable fix — `install.sh` could know
-its own source checkout path (`HARNESS_SRC`/`$(dirname "$0")`, which it already computes) and
-substitute that absolute path into the installed `SKILL.md` text in place of the
-`${CLAUDE_PLUGIN_ROOT}` placeholder — but it is a scope change to `install.sh`'s behavior, which
-this task was explicitly told not to touch, and is exactly the kind of change that needs the
-plugin-vs-non-plugin distribution story thought through deliberately rather than as a side effect
-of a docs task.
-
-### 4. A template file should not satisfy the check it is a template for
-
-**What's wrong:** `state.mjs` looks for handoff artefacts at any depth:
-
-```js
-function existsAnyDepth(ctx, name) {
-  return ctx.exists(name) || ctx.list([`**/${name}`]).length > 0;
-}
-```
-
-The any-depth search is deliberate and right — a repository that keeps its handoff doc at
-`docs/session-handoff.md` should get credit for it. What is wrong is that an *unfilled template*
-counts as a real artefact. Measured in this repository:
-
-```
-session-handoff.md      -> ["session-handoff.md",
-                            "templates/en/session-handoff.md",
-                            "templates/zh/session-handoff.md"]
-clean-state-checklist.md -> ["clean-state-checklist.md",
-                            "templates/en/clean-state-checklist.md",
-                            "templates/zh/clean-state-checklist.md"]
-```
-
-So a repository that merely vendors these templates — or has a `templates/` directory of its own
-containing a file with one of these names — passes `state.no-handoff` without ever writing a real
-handoff document. That is a false positive in a rubric whose entire value is not giving credit for
-things that do not exist.
-
-**Note on this repository's own score:** it does not inflate it. The root `session-handoff.md` and
-`clean-state-checklist.md` are real, filled-in files (they appear first in the lists above), so
-State would score 4 with or without the templates present. This was checked before publishing an
-L5 badge, precisely because a self-assessment that flattered itself would be worse than no badge.
-
-**Why not fixed in v1:** the fix is not just "exclude `templates/`" — that would special-case one
-directory name while leaving the general problem (a placeholder counting as content) untouched. The
-right shape is probably for the scorer to reject files that still contain unfilled `FILL:`
-placeholders, which is a real change to what "exists" means across several scorers and needs its own
-fixture coverage. Found during Task 24 by the implementer, who reported it rather than quietly
-enjoying the free points.
+- **`suppressedHighNote` calls `allGaps` twice per render.** `scripts/lib/report.mjs`'s
+  `suppressedHighNote` calls `allGaps(report)` once to filter for hidden high-severity gaps and a
+  second time to build the id-to-title map used to name them in the disclosure line. Negligible at
+  the current rubric size — 6 subsystems, 39 gaps, one render per `assess` invocation — so left as
+  is. Recorded only in case the rubric grows an order of magnitude and this stops being free.
 
 ## Beyond v1.1 — larger directions
 
@@ -159,8 +102,9 @@ a release.
 - **`PRUNE_DIRS` / `DEFAULT_IGNORE` remain two hand-synced lists.** `scripts/lib/scan.mjs:7` and
   `:10` define `DEFAULT_IGNORE` (glob patterns) and `PRUNE_DIRS` (a `Set` of bare directory names)
   separately; editing one without the other could silently reintroduce a directory-walk leak.
-  Verified still present by reading the file directly. Noted as a minor risk since Task 4; not
-  urgent enough to have been folded into item 2 above, but the same underlying class of risk.
+  Verified still present by reading the file directly. Noted as a minor risk since Task 4; the same
+  underlying class of hand-synced-list drift as the `MAX_SCORE` duplication fixed in v1.1, but this
+  one was not folded into that fix and remains open.
 - **A cosmetic inconsistency in the example fixtures.** `fixtures/good-repo/go.sum` and
   `fixtures/mid-repo/go.sum` both pin `github.com/lib/pq` with no matching `require` line in the
   corresponding `go.mod` and no import in `main.go`. Verified still present by reading both files
@@ -174,3 +118,10 @@ queue. See the [README's Safety section](README.md#safety) and
 `skills/harness-verify/SKILL.md`'s Limitations section for the full statement. These are listed
 there, not here, because the project's own conclusion after seven rounds of adversarial review was
 that the right next step is disclosure, not another round of patching.
+
+The "unfilled template" check's byte-identity rule has a ceiling of the same kind: a CRLF checkout,
+a trailing-newline difference, a one-character edit, or a template body that changed between
+versions all defeat it, and in an install that ships `scripts/` without `templates/` it silently
+becomes a no-op. Written up in full in
+[`references/rubric.md`](references/rubric.md#what-the-unfilled-template-check-does-not-catch),
+next to the rule it qualifies, rather than repeated here.

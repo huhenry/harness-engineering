@@ -8,7 +8,7 @@ import { createScanContext } from './lib/scan.mjs';
 import { loadConfig } from './lib/config.mjs';
 import { detectStack } from './lib/stack.mjs';
 import { SCORERS } from './lib/scorers/index.mjs';
-import { buildReport, renderMarkdown } from './lib/report.mjs';
+import { buildReport, renderMarkdown, allGaps } from './lib/report.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -151,7 +151,14 @@ function main(argv) {
   if (minLevel !== null) {
     return report.level.id >= minLevel ? 0 : 1;
   }
-  const hasHigh = report.subsystems.some((s) => s.gaps.some((g) => g.severity === 'high'));
+  // allGaps, not report.subsystems[].gaps: a gap suppressed for readability
+  // is still a failing check, and the exit code is a behavioural contract
+  // ("this repository has a high-severity gap"), not a summary of what got
+  // printed. Reading the rendered subset here made a repo whose only
+  // high-severity gaps were suppressed exit 0 with no scorer change --
+  // README's "stable interface" that this project's own CI gates on,
+  // quietly inverted.
+  const hasHigh = allGaps(report).some((g) => g.severity === 'high');
   return hasHigh ? 1 : 0;
 }
 

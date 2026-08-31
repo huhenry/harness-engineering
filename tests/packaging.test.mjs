@@ -244,3 +244,161 @@ test('install.sh targets ship skill text only -- no scripts/ is resolvable, and 
   assert.match(output, /script/i, 'install.sh output must mention the scripts/ gap in its own words');
   assert.match(output, /(checkout|github\.com\/huhenry\/harness-engineering)/i, 'install.sh output must point at where to get a working checkout');
 });
+
+// install.sh copies skill TEXT only, and none of the five target
+// ecosystems set a $CLAUDE_PLUGIN_ROOT-equivalent variable — so the skills'
+// documented `node "${CLAUDE_PLUGIN_ROOT}/scripts/*.mjs"` commands could not
+// resolve after a plain install, and the skill had to ask the user for a
+// checkout path the first time it needed one. install.sh already knows its
+// own source path; it now substitutes it.
+test('install.sh substitutes the checkout path into installed skill text', () => {
+  const dst = tempDir('harness-install-subst-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    assert.ok(
+      !text.includes('${CLAUDE_PLUGIN_ROOT}'),
+      `${skill}/SKILL.md still carries an unsubstituted \${CLAUDE_PLUGIN_ROOT}`,
+    );
+  }
+});
+
+// The substitution is a blanket `sed ... g`, so it rewrites the skill's own
+// explanation of the placeholder just as readily as it rewrites a command.
+// A shipped version of these skills said "it only works in the braced
+// ${CLAUDE_PLUGIN_ROOT} form", and a real install turned that into "it only
+// works in the braced <absolute path of the checkout> form" -- a sentence
+// that is simply false, in the file whose whole job is telling an agent how
+// to find the scripts. The existing tests only checked that the placeholder
+// was gone, which that damaged text passes.
+//
+// The rule that makes the blanket substitution safe is positional: the
+// placeholder may appear only immediately before `/scripts/`. This asserts
+// it on the INSTALLED output, where the damage would actually show up
+// (tests/skills.test.mjs asserts the same rule on the source).
+test('installing never rewrites prose -- the substituted path lands only in script paths', () => {
+  const dst = tempDir('harness-install-prose-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(ROOT, from);
+      if (at === -1) break;
+      assert.equal(
+        text.slice(at + ROOT.length, at + ROOT.length + 9), '/scripts/',
+        `${skill}/SKILL.md: the substituted checkout path at offset ${at} is not part of a scripts/ path -- `
+        + `sed rewrote prose. Context: ${JSON.stringify(text.slice(Math.max(0, at - 60), at + ROOT.length + 40))}`,
+      );
+      from = at + ROOT.length;
+    }
+  }
+});
+
+// Task 4 made an install.sh install resolve its own commands. The installed
+// skill's decision procedure has to say so: the version shipped before this
+// test still told the agent that an install.sh install has "no scripts
+// present at all. Ask the user for the path" -- a live instruction to do
+// the exact thing the substitution abolished.
+test('the installed skill does not tell the agent to ask for a path it already has', () => {
+  const dst = tempDir('harness-install-branch-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  for (const skill of ['harness-assess', 'harness-scaffold', 'harness-verify']) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    const askBullet = text.split('\n').find((l) => l.includes('Ask the user'));
+    assert.ok(askBullet, `${skill}/SKILL.md must still document the ask-the-user fallback`);
+    assert.ok(
+      !/install\.sh` into|installed by copying only/.test(askBullet),
+      `${skill}/SKILL.md still files an install.sh install under "ask the user for a path": ${askBullet}`,
+    );
+    assert.match(
+      text, /`install\.sh`[^\n]*install time/,
+      `${skill}/SKILL.md must say that an install.sh install writes the path in at install time`,
+    );
+  }
+});
+
+test('the substituted command actually runs', () => {
+  const dst = tempDir('harness-install-runs-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  const text = readFileSync(join(dst, '.claude', 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  // Pull the first `node "<path>/scripts/assess.mjs"` occurrence back out of
+  // the installed text and run it for real — the whole point of this fix is
+  // that the path in the installed skill resolves, and only executing it
+  // proves that.
+  const m = text.match(/node "([^"]*\/scripts\/assess\.mjs)"/);
+  assert.ok(m, 'installed harness-assess SKILL.md must contain a runnable assess command');
+  // assess.mjs legitimately exits 1 whenever a repo has any high-severity gap
+  // and no --min-level is given (its own documented exit-code contract), and
+  // fixtures/bad-repo -- a deliberate 0/24 fixture -- has several. execFileSync
+  // throws on a non-zero exit by default, so asserting on its return value
+  // would fail here regardless of whether the path substitution works.
+  // spawnSync plus an explicit status check runs the identical command
+  // without that false failure, and also pins down the real, correct exit
+  // code as part of proving the command runs.
+  const result = spawnSync('node', [m[1], join(ROOT, 'fixtures', 'bad-repo'), '--json'], { encoding: 'utf8' });
+  assert.equal(result.status, 1, `assess.mjs should exit 1 for bad-repo's high-severity gaps (stderr: ${result.stderr})`);
+  assert.equal(JSON.parse(result.stdout).level.id, 0);
+});
+
+test('the source checkout is not mutated by installing', () => {
+  const before = readFileSync(join(ROOT, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  const dst = tempDir('harness-install-nomutate-');
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+  const after = readFileSync(join(ROOT, 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  assert.equal(after, before, 'install.sh must never rewrite its own source skills/');
+  assert.ok(before.includes('${CLAUDE_PLUGIN_ROOT}'), 'the source keeps the placeholder form');
+});
+
+test('a checkout path containing shell-special characters survives substitution', () => {
+  // sed's replacement text treats &, |, and \ specially -- & means "the whole
+  // match", \ is the escape character, and | is the delimiter install.sh's
+  // sed command uses. All three must be escaped once, up front, or a real
+  // path containing any of them would corrupt the substitution or break the
+  // sed command's own syntax. Cover all three characters install.sh's own
+  // escape class ([&|\\]) claims to handle, not just '&' -- a fix round 1
+  // review found this test only exercised '&', leaving '|' and '\' untested
+  // (not a live bug -- hand-verified to round-trip correctly -- but the gap
+  // itself was real).
+  const weird = tempDir('harness-src-a&b|c\\d-');
+  cpSync(join(ROOT, 'skills'), join(weird, 'skills'), { recursive: true });
+  cpSync(join(ROOT, 'install.sh'), join(weird, 'install.sh'));
+  const dst = tempDir('harness-install-weird-');
+  execFileSync('sh', [join(weird, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: weird } });
+  const text = readFileSync(join(dst, '.claude', 'skills', 'harness-assess', 'SKILL.md'), 'utf8');
+  assert.ok(text.includes(`${weird}/scripts/assess.mjs`), 'the literal path must land intact');
+});
+
+// Fix round 1 finding 1 (Important, bordering Critical): install.sh's
+// substitution loop used to glob "$t"/*/SKILL.md at the DESTINATION, which
+// matches every SKILL.md in the target directory -- not just the five this
+// script just copied. ${CLAUDE_PLUGIN_ROOT} is a general Claude Code
+// convention, not proprietary to this repo, so any third-party skill already
+// installed alongside harness-engineering's own (e.g. sharing .claude/skills)
+// got silently rewritten too, pointing its commands at a path inside THIS
+// checkout that has nothing to do with it. This project leads with the
+// guarantee that it never overwrites a file it did not ship; an installer
+// that silently corrupts an unrelated stranger's file breaks that promise
+// outright. The fix scopes the substitution to exactly the skill directory
+// names enumerated from "$SRC"/skills/, never a destination glob.
+test('install.sh never touches a foreign skill\'s SKILL.md sharing the same target directory', () => {
+  const dst = tempDir('harness-install-foreign-');
+  const foreignDir = join(dst, '.claude', 'skills', 'some-other-tool');
+  mkdirSync(foreignDir, { recursive: true });
+  const foreignPath = join(foreignDir, 'SKILL.md');
+  const foreignBefore = '---\nname: some-other-tool\n---\n\nRun: node "${CLAUDE_PLUGIN_ROOT}/their/tool.mjs"\n';
+  writeFileSync(foreignPath, foreignBefore);
+
+  execFileSync('sh', [join(ROOT, 'install.sh')], { cwd: dst, env: { ...process.env, HARNESS_SRC: ROOT } });
+
+  const foreignAfter = readFileSync(foreignPath, 'utf8');
+  assert.equal(foreignAfter, foreignBefore, 'install.sh must never rewrite a SKILL.md it did not ship, byte-identical or not at all');
+
+  // Sanity: the five shipped skills still got their real substitution in the
+  // same run, proving this isn't passing by accident (e.g. the loop silently
+  // doing nothing at all).
+  for (const skill of SKILLS) {
+    const text = readFileSync(join(dst, '.claude', 'skills', skill, 'SKILL.md'), 'utf8');
+    assert.ok(!text.includes('${CLAUDE_PLUGIN_ROOT}'), `${skill}/SKILL.md should still be substituted`);
+  }
+});

@@ -1,8 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { score, validateFeatureList } from '../../scripts/lib/scorers/state.mjs';
 import { gapsFor } from '../../scripts/lib/rubric.mjs';
 import { globToRegExp } from '../../scripts/lib/scan.mjs';
+import { buildReport, renderMarkdown } from '../../scripts/lib/report.mjs';
+import { MESSAGES } from '../../scripts/lib/i18n.mjs';
 
 const NOW = new Date('2026-08-10T00:00:00Z');
 const FRESH = new Date('2026-08-05T00:00:00Z'); // 5 days before NOW
@@ -133,6 +138,10 @@ test('scores 3 when feature_list.json is valid but handoff files are missing', (
   const r = score(input({ files, mtimes: { 'PROGRESS.md': FRESH } }));
   assert.equal(r.score, 3);
   assert.ok(r.gapIds.includes('state.no-handoff'));
+  // Both artefacts are genuinely absent here, not present-but-unfilled -- so
+  // this must report only state.no-handoff, never state.handoff-unfilled
+  // (Finding 3: the two ids are for two different facts about the file).
+  assert.ok(!r.gapIds.includes('state.handoff-unfilled'));
 });
 
 test('scores 3 when handoff files exist but AGENTS.md does not document session lifecycle', () => {
@@ -303,4 +312,218 @@ test('AGENTS.md missing entirely means lifecycle is undocumented', () => {
   const r = score(input({ files, mtimes: { 'PROGRESS.md': FRESH } }));
   assert.ok(r.gapIds.includes('state.lifecycle-undocumented'));
   assert.equal(r.score, 3);
+});
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const readShipped = (rel) => readFileSync(join(REPO_ROOT, 'templates', 'en', rel), 'utf8');
+
+/** Everything state needs for rung 3, so rung 4 is the only thing in play. */
+function rungThreeFiles(extra = {}) {
+  return {
+    'PROGRESS.md': DONE_DOING_BLOCKED,
+    'feature_list.json': VALID_FEATURE_LIST,
+    'AGENTS.md': AGENTS_WITH_LIFECYCLE,
+    ...extra,
+  };
+}
+
+// A repository that merely vendors this project's templates must not pass
+// state.no-handoff without ever writing a real handoff document.
+// Finding 3 (fix round 1): both artefacts here EXIST -- they are just
+// unfilled -- so classifyHandoffArtefact reports 'unfilled', not 'absent',
+// and the ladder must fire state.handoff-unfilled, not state.no-handoff.
+// Reporting "no session handoff doc" when the file is sitting right there
+// would be exactly the kind of lying report this project exists to prevent.
+test('vendored, unedited templates report handoff-unfilled, not no-handoff', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'templates/en/session-handoff.md': readShipped('session-handoff.md'),
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
+});
+
+test('real, filled-in handoff artefacts still satisfy the handoff rung', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser. Next: wire the CLI.\n',
+      'clean-state-checklist.md': '# Checklist\n\n- [x] git status clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
+  assert.ok(!r.gapIds.includes('state.handoff-unfilled'));
+});
+
+// The any-depth search itself is deliberate and stays: a repo that keeps its
+// handoff at docs/session-handoff.md should get credit for it.
+test('a filled handoff at any depth still counts', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'docs/session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'docs/clean-state-checklist.md': '# Checklist\n\n- [x] clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+});
+
+// Mixed case: a real handoff plus a vendored checklist is still incomplete
+// -- but the checklist file DOES exist (just unfilled), so this is
+// state.handoff-unfilled, not state.no-handoff (Finding 3).
+test('one real artefact plus one vendored template reports handoff-unfilled, not no-handoff', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  assert.ok(!r.gapIds.includes('state.no-handoff'));
+});
+
+// Both ids can fire together when they describe two different true facts:
+// one artefact is missing outright, the other exists but was never filled
+// in. Neither id supersedes the other (Finding 3).
+test('one absent artefact plus one unfilled artefact reports both gap ids', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      // session-handoff.md intentionally absent.
+      'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.ok(r.gapIds.includes('state.no-handoff'));
+  assert.ok(r.gapIds.includes('state.handoff-unfilled'));
+  // Each gap must be attributed to the artefact that actually caused it,
+  // not to both artefacts unconditionally (see below for why).
+  assert.deepEqual(r.gapVars['state.no-handoff'], { artefacts: 'session-handoff.md' });
+  // Named at the path it really sits at -- the vendored copy under
+  // templates/en/ is the file the user has to deal with, and there is no
+  // clean-state-checklist.md at the root to send them to.
+  assert.deepEqual(r.gapVars['state.handoff-unfilled'], { artefacts: 'templates/en/clean-state-checklist.md' });
+});
+
+// Evidence must point at the artefact a reader can act on. Both copies here
+// are filled, so both are valid answers to "is this artefact filled?" and
+// the score is 4 either way -- but only one of them is the canonical
+// location. Assessing this repository itself produced the concrete failure
+// this pins: the glob's first hit was a copy inside an untracked stale
+// worktree directory, so the report cited machine-specific debris as its
+// evidence for a document sitting in the repo root. The deep copy is listed
+// first here on purpose; the harness's `list` preserves insertion order, so
+// without the root-first seeding this test fails.
+test('evidence names the canonical root artefact when several copies are filled', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'nested/copy/session-handoff.md': '# Handoff\n\nA vendored but filled-in copy.\n',
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'clean-state-checklist.md': '# Checklist\n\n- [x] clean\n',
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 4);
+  const handoff = r.evidence.find((e) => e.note === 'handoff doc');
+  assert.equal(handoff.path, 'session-handoff.md');
+});
+
+// An unfilled artefact is a real file the user can open, so it belongs in
+// the evidence array too -- leaving it out made the JSON report of "the
+// file exists but is a template" indistinguishable from "the file is
+// missing", which is the one distinction state.handoff-unfilled exists for.
+test('an unfilled artefact is recorded as evidence, marked as unfilled', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'session-handoff.md': '# Handoff\n\nShipped the parser.\n',
+      'clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  const checklist = r.evidence.find((e) => e.path === 'clean-state-checklist.md');
+  assert.equal(checklist.note, 'unfilled template');
+  // An absent artefact contributes nothing: there is no path to point at.
+  const absent = score(input({
+    files: rungThreeFiles({ 'session-handoff.md': '# Handoff\n\nShipped it.\n' }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(absent.evidence.filter((e) => e.path === 'clean-state-checklist.md').length, 0);
+});
+
+// An unfilled artefact is named at the path it actually sits at. Naming the
+// canonical root path would send the reader to a file that does not exist --
+// and it is also what made the fix text false: the text used to say
+// re-running scaffold "would only add a .harness-proposed sibling", which is
+// what happens when the ROOT path is occupied. When the only copy is below
+// the root, `scaffold --only state.no-handoff` plans `create` at the root
+// instead, leaving the real file untouched. The wording now describes the
+// outcome both branches share.
+test('an unfilled artefact below the root is named at its real path', () => {
+  const r = score(input({
+    files: rungThreeFiles({
+      'docs/session-handoff.md': readShipped('session-handoff.md'),
+      'docs/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+    }),
+    gitLastCommits: { 'PROGRESS.md': FRESH },
+  }));
+  assert.equal(r.score, 3);
+  assert.deepEqual(r.gapVars['state.handoff-unfilled'],
+    { artefacts: 'docs/session-handoff.md, docs/clean-state-checklist.md' });
+  for (const lang of ['en', 'zh']) {
+    const fix = MESSAGES[lang]['gap.state.handoff-unfilled.fix'];
+    assert.ok(!/harness-proposed/.test(fix),
+      `${lang}: the fix must not promise a .harness-proposed sibling -- scaffold writes one only when the ROOT path is taken`);
+  }
+});
+
+// The mixed case, asserted on the RENDERED PROSE rather than on gap ids.
+// Every id-level assertion above passed while the report simultaneously
+// told the user to "open the existing session-handoff.md ... the file is
+// already there" (for a file the same report said was missing) and to "add
+// a ... clean-state-checklist.md" (for a file that existed). Two true gap
+// ids, one self-contradicting document. Only a test that reads the finished
+// text can catch that class of defect.
+test('the mixed absent/unfilled report never names an artefact in the wrong state', () => {
+  for (const lang of ['en', 'zh']) {
+    const r = score(input({
+      files: rungThreeFiles({
+        // session-handoff.md intentionally absent.
+        'templates/en/clean-state-checklist.md': readShipped('clean-state-checklist.md'),
+      }),
+      gitLastCommits: { 'PROGRESS.md': FRESH },
+    }));
+    const empty = { score: 0, cappedByEvidence: false, evidence: [], gapIds: [] };
+    const report = buildReport({
+      repo: '/fake',
+      stack: [],
+      results: {
+        instructions: empty, tools: empty, environment: empty, state: r, feedback: empty, loop: empty,
+      },
+      hasEvidence: false,
+      evidenceReason: 'missing',
+      verifiedAt: null,
+      toolVersion: '0.1.0',
+      now: NOW,
+      lang,
+    });
+    const md = renderMarkdown(report, lang);
+    const gaps = report.subsystems.find((s) => s.id === 'state').gaps;
+    const byId = Object.fromEntries(gaps.map((g) => [g.id, `${g.why} ${g.fix}`]));
+
+    // The absent artefact is named only by the "missing" gap, and the
+    // unfilled one only by the "exists but unfilled" gap.
+    assert.ok(byId['state.no-handoff'].includes('session-handoff.md'), `${lang}: no-handoff must name the absent artefact`);
+    assert.ok(!byId['state.no-handoff'].includes('clean-state-checklist.md'), `${lang}: no-handoff must not name the artefact that exists`);
+    assert.ok(byId['state.handoff-unfilled'].includes('clean-state-checklist.md'), `${lang}: handoff-unfilled must name the unfilled artefact`);
+    assert.ok(!byId['state.handoff-unfilled'].includes('session-handoff.md'), `${lang}: handoff-unfilled must not name the artefact that is missing`);
+    assert.ok(!/\{\w+\}/.test(md), `${lang}: an interpolation placeholder survived into the rendered report`);
+  }
 });
