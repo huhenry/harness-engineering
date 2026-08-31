@@ -72,14 +72,16 @@ should be able to trust it instead of re-deriving state from the diff.
 - Staged release integration: after a fresh remote-state review, PR #1 was marked Ready and merged
   into `main` as `a4615fe`. Post-merge CI run `33348900204` passed Node 20/22 and self-assessment.
   Local `main` was then safely fast-forwarded, and Draft PR #2 was retargeted from
-  `v1.1-hardening` to `main`. Its v1.2-only diff remains mergeable; this release-state update will
-  trigger the fresh retargeted CI that must pass before review handoff.
+  `v1.1-hardening` to `main`. Release-state commit `6f8135d` then passed retargeted CI run
+  `33349293624` (Node 20/22/24 plus self-assessment) and harness-diff run `33349293626`. The Action
+  validated `21 → 21 (0)`, L3 → L3, `regression=false`, and updated the same comment
+  `5404806581`; the API still reports exactly one marked comment.
 
 ## In Progress
 
 - v1.1 is merged into `main`. v1.2 is complete and remains intentionally unmerged as Draft PR #2,
-  now based directly on `main`; its fresh retargeted CI/review is the active release gate. The next
-  planned product milestone is v1.3, the explicit
+  now based directly on `main`; all retargeted checks are green, so human review and separate merge
+  approval are the active release gates. The next planned product milestone is v1.3, the explicit
   `assess --profile harness-distribution` profile described in the external
   `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`. No v1.3 product code
   has started.

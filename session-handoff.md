@@ -12,7 +12,8 @@ v1.1 is merged and v1.2 is now a standalone Draft PR against `main`:
 - PR #2: https://github.com/huhenry/harness-engineering/pull/2,
   `v1.2-adoption-levers` → `main`. It was retargeted from `v1.1-hardening` only after PR #1's
   post-merge CI passed. It remains Draft and must not be merged without separate explicit human
-  approval.
+  approval. Release-state commit `6f8135d` passed retargeted CI run `33349293624` and harness-diff
+  run `33349293626`; GitHub reports the PR mergeable with merge state CLEAN.
 
 The publication review found and fixed three issues before the Draft PRs were treated as ready:
 
@@ -35,6 +36,9 @@ Live acceptance evidence on PR #2:
 - The real output consumer passed with score `21 → 21 (0)`, level `3 → 3`, and
   `regression=false`. L3/21 is expected in a clean PR checkout: neither side has the gitignored
   `.harness/verify-report.json`, so the comparison is symmetric and evidence-free.
+- The retargeted run repeated the same `21 → 21 (0)`, L3 → L3, `regression=false` result against
+  base commit `a4615fe`; it updated comment `5404806581` at `2026-08-31T02:00:21Z`, and the API still
+  returned exactly one marked comment.
 - The diff job's runner log proved its effective token permissions were `Contents: read` and
   `PullRequests: write`; it emitted no job-summary file-command warning. All PR #1 and PR #2 checks
   passed, including PR #2's Node 20/22/24 matrix and self-assessment.
