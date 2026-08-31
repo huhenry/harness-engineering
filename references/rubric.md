@@ -27,6 +27,22 @@ Scores are **gated**, not additive — see [Levels](#levels) below. A repository
 still sit at L0 if `instructions` is 0, because L1 requires `instructions >= 2` specifically, not
 just a high total.
 
+## Assessment profiles
+
+`repository` is the default profile and applies the six scorers exactly as documented below.
+`harness-distribution` adds a diagnostic overlay for repositories whose product is reusable harness
+content. It discovers readable root or nested `**/skills/**/SKILL.md`, `**/agents/*.md`, and
+`**/workflows/*` files, excluding `.github/workflows`. The overlay uses those files to resolve only
+the six existing `loop.*` findings when it finds the corresponding loop description, workflow
+entrypoint, stop condition, budget cap, maker/checker role pair, and rollback language.
+
+The overlay runs after scoring and has no score-shaped input: it cannot change subsystem scores,
+evidence caps, the total, or the computed level. It does not execute the discovered files, and
+nested distribution content does not prove root-level instructions, tools, tests, declared checks,
+or CI. An unreadable file contributes neither facts nor evidence. Assessment JSON records the
+selected `profile`; a legacy report with no field means `repository`, and `diff` rejects reports
+from different profiles instead of comparing diagnostics with different meanings.
+
 ## Instructions (`instructions.*`)
 
 Scored from `AGENTS.md` or `CLAUDE.md` (in that order — whichever exists first wins).

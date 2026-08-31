@@ -2,6 +2,7 @@ import { SUBSYSTEMS, MAX_SCORE, gapById } from './rubric.mjs';
 import { computeRoi, sortGaps } from './roi.mjs';
 import { computeLevel } from './level.mjs';
 import { t } from './i18n.mjs';
+import { DEFAULT_PROFILE } from './profiles.mjs';
 
 export const SCHEMA_VERSION = 1;
 
@@ -46,6 +47,7 @@ function materialize(key, lang, vars) {
  */
 export function buildReport({
   repo, stack, results, hasEvidence, evidenceReason = null, verifiedAt, toolVersion, now, lang,
+  profile = DEFAULT_PROFILE,
 }) {
   const scores = Object.fromEntries(SUBSYSTEMS.map((id) => [id, results[id].score]));
 
@@ -100,6 +102,7 @@ export function buildReport({
 
   return {
     schemaVersion: SCHEMA_VERSION,
+    profile,
     tool: { name: 'harness-engineering', version: toolVersion },
     repo,
     generatedAt: now.toISOString(),
@@ -236,6 +239,9 @@ export function renderMarkdown(report, lang) {
   lines.push(`# ${t('report.title', lang)}`, '');
   lines.push(t('report.score', lang, report.score), '');
   lines.push(t('report.level', lang, { id: report.level.id, name: report.level.name }), '');
+  if (report.profile !== DEFAULT_PROFILE) {
+    lines.push(t('report.profile', lang, { profile: report.profile }), '');
+  }
   // Task-15 brief section B: when evidence didn't take effect, say why —
   // not just "unverified". `report.evidence.reason` is only ever null when
   // verified is true (see buildReport), so this guard also protects

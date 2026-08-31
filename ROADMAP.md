@@ -79,7 +79,17 @@ These come from the project's original design document, which lives outside this
 (planning documents for open-source repos are kept in a sibling directory by project convention,
 so they are deliberately not part of a checkout). They are directions rather than scheduled work,
 one of them — the GitHub Action — shipped in
-v1.2 and is struck through below. The rest are not started.
+v1.2 and is struck through below. v1.3's distribution-profile foundation is recorded the same
+way; the broader graph runtime remains open.
+
+- ~~**Harness-distribution-aware assessment.** Recognize reusable skills, agent roles, and workflow
+  definitions without pretending they are root-repository proof.~~ **Shipped in v1.3.** The explicit
+  `harness-distribution` profile discovers root and nested harness bundles and can resolve Loop
+  diagnostics only. Scores, evidence caps, totals, and levels remain byte-for-byte equivalent to
+  the default `repository` profile; reports carry the profile, and cross-profile diffs are refused.
+  The clean-room `fixtures/albert-shaped` repository locks in both the positive recognition and the
+  root-gap boundary. This is the assessment foundation for graph engineering, not a DAG runner or
+  multi-agent execution engine.
 
 - **Graph engineering.** Multi-agent orchestration: defining a DAG of agent steps, and acceptance
   criteria for the graph as a whole rather than for one agent at a time. The Loop subsystem in this

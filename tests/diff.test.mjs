@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { computeDiff } from '../scripts/lib/diff.mjs';
 
 /** A minimal report shaped like assess --json's real output. */
-function report({ total = 12, level = 2, subsystems = {}, gaps = {} } = {}) {
+function report({ total = 12, level = 2, subsystems = {}, gaps = {}, profile } = {}) {
   const ids = ['instructions', 'tools', 'environment', 'state', 'feedback', 'loop'];
-  return {
+  const result = {
     schemaVersion: 1,
     score: { total, max: 24 },
     level: { id: level, name: `L${level}`, unmetGates: [] },
@@ -21,6 +21,8 @@ function report({ total = 12, level = 2, subsystems = {}, gaps = {} } = {}) {
       })),
     })),
   };
+  if (profile !== undefined) result.profile = profile;
+  return result;
 }
 
 test('an identical pair is not a regression and has zero deltas', () => {
@@ -31,6 +33,31 @@ test('an identical pair is not a regression and has zero deltas', () => {
   assert.equal(d.delta.level, 0);
   assert.deepEqual(d.gaps.fixed, []);
   assert.deepEqual(d.gaps.introduced, []);
+  assert.equal(d.profile, 'repository', 'legacy reports without a profile normalize to repository');
+});
+
+test('reports with the same explicit profile can be compared and carry it into the result', () => {
+  const d = computeDiff(
+    report({ profile: 'harness-distribution' }),
+    report({ profile: 'harness-distribution' }),
+  );
+  assert.equal(d.profile, 'harness-distribution');
+});
+
+test('different profiles are refused before gap changes can masquerade as fixes', () => {
+  assert.throws(
+    () => computeDiff(
+      report({ profile: 'repository' }),
+      report({ profile: 'harness-distribution' }),
+    ),
+    /profile.*before=repository.*after=harness-distribution/i,
+  );
+});
+
+test('a legacy report is compatible with an explicit repository report', () => {
+  const d = computeDiff(report(), report({ profile: 'repository' }));
+  assert.equal(d.profile, 'repository');
+  assert.equal(d.regression, false);
 });
 
 test('a total-score drop is a regression', () => {

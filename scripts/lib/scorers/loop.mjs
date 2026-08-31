@@ -1,6 +1,7 @@
 import { ladder } from './ladder.mjs';
 import { CI_WORKFLOW_GLOBS } from './ci-workflows.mjs';
 import { MAX_SCORE } from '../rubric.mjs';
+import { analyzeLoopText } from '../loop-facts.mjs';
 
 export const id = 'loop';
 
@@ -14,23 +15,6 @@ export const id = 'loop';
 // matter which specific file a keyword lives in.
 const DOC_FILES = ['AGENTS.md', 'CLAUDE.md', 'README.md'];
 const LOOP_DOCS_GLOB = 'loop/*.md';
-
-// Review finding: the Latin alternatives are common English word fragments
-// ('loop' inside 'loophole', 'cron' inside 'micron') and matched unanchored
-// as bare substrings, so a doc that never once mentions an agentic loop
-// could still score a rung and get told "loop pattern described". Each
-// Latin word is wrapped with \b...\b (as one group, so the boundary applies
-// per-alternative) to require it stand alone. The CJK alternatives
-// (自主/循环) are deliberately kept OUTSIDE that group and un-anchored: \b is
-// defined in terms of [A-Za-z0-9_] word characters and does not recognize a
-// transition into/out of CJK text as a boundary, so wrapping them the same
-// way would silently stop matching real Chinese prose (no whitespace
-// between words) rather than fixing anything.
-const LOOP_KEYWORD_RE = /\b(autonomous|loop|cron|scheduled)\b|自主|循环/i;
-const STOP_CONDITION_RE = /stop condition|exit criteria|停止条件|退出条件/i;
-const BUDGET_CAP_RE = /max iterations|budget|token cap|最大迭代|预算/i;
-const MAKER_CHECKER_RE = /maker-checker|reviewer agent|角色分离/i;
-const ROLLBACK_RE = /rollback|revert|回滚/i;
 
 /** Concatenated text of every doc source this subsystem reads (see DOC_FILES above). */
 function allDocsText(ctx) {
@@ -48,7 +32,8 @@ function allDocsText(ctx) {
 
 export function score({ ctx, config }) {
   const docs = allDocsText(ctx);
-  const hasKeyword = LOOP_KEYWORD_RE.test(docs);
+  const facts = analyzeLoopText(docs);
+  const hasKeyword = facts.hasKeyword;
 
   // Same CI_WORKFLOW_GLOBS as feedback.mjs's no-ci check (see ci-workflows.mjs)
   // — GitHub Actions accepts both .yml and .yaml, and a repo whose only
@@ -60,11 +45,11 @@ export function score({ ctx, config }) {
   const configDeclaresLoop = Boolean(config?.loop);
   const hasEntryPoint = scheduledWorkflow || hasLoopDir || configDeclaresLoop;
 
-  const hasStopCondition = STOP_CONDITION_RE.test(docs);
-  const hasBudgetCap = BUDGET_CAP_RE.test(docs);
+  const hasStopCondition = facts.hasStopCondition;
+  const hasBudgetCap = facts.hasBudgetCap;
 
-  const hasMakerChecker = ctx.exists('evaluator-rubric.md') || MAKER_CHECKER_RE.test(docs);
-  const hasRollback = ROLLBACK_RE.test(docs);
+  const hasMakerChecker = ctx.exists('evaluator-rubric.md') || facts.hasMakerChecker;
+  const hasRollback = facts.hasRollback;
 
   const { score, gapIds } = ladder([
     // Rungs 1 and 2 used to share 'loop.none' on the theory that they were
@@ -92,7 +77,7 @@ export function score({ ctx, config }) {
   ]);
 
   const evidence = [];
-  const keywordFile = DOC_FILES.find((f) => LOOP_KEYWORD_RE.test(ctx.read(f) ?? ''));
+  const keywordFile = DOC_FILES.find((f) => analyzeLoopText(ctx.read(f) ?? '').hasKeyword);
   if (keywordFile) evidence.push({ kind: 'file', path: keywordFile, note: 'loop pattern described' });
   else if (hasKeyword) evidence.push({ kind: 'file', path: 'loop/', note: 'loop pattern described' });
   if (scheduledWorkflow) evidence.push({ kind: 'file', path: scheduledWorkflowFile, note: 'scheduled workflow' });

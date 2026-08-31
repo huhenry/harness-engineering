@@ -1,5 +1,6 @@
 import { SUBSYSTEMS } from './rubric.mjs';
 import { allGaps } from './report.mjs';
+import { DEFAULT_PROFILE, SUPPORTED_PROFILES } from './profiles.mjs';
 
 export const DIFF_SCHEMA_VERSION = 1;
 
@@ -73,6 +74,20 @@ function validateReport(report, side) {
   }
 }
 
+/** Historical schema-v1 reports predate the additive `profile` field and
+ * therefore mean the original repository scan. Explicit unknown values are
+ * refused rather than treated as repository: a misspelled policy must never
+ * silently participate in a comparison. */
+function reportProfile(report, side) {
+  const profile = report?.profile ?? DEFAULT_PROFILE;
+  if (!SUPPORTED_PROFILES.includes(profile)) {
+    throw new TypeError(
+      `computeDiff: ${side}.profile must be one of ${SUPPORTED_PROFILES.join(', ')}, got ${profile}`,
+    );
+  }
+  return profile;
+}
+
 /**
  * Compare two `assess --json` reports.
  *
@@ -87,6 +102,13 @@ function validateReport(report, side) {
  * one of them while describing identical facts.
  */
 export function computeDiff(before, after) {
+  const beforeProfile = reportProfile(before, 'before');
+  const afterProfile = reportProfile(after, 'after');
+  if (beforeProfile !== afterProfile) {
+    throw new TypeError(
+      `computeDiff: profile mismatch: before=${beforeProfile} after=${afterProfile}`,
+    );
+  }
   validateReport(before, 'before');
   validateReport(after, 'after');
 
@@ -133,6 +155,7 @@ export function computeDiff(before, after) {
 
   return {
     schemaVersion: DIFF_SCHEMA_VERSION,
+    profile: beforeProfile,
     before: { total: before.score.total, max: before.score.max, level: before.level.id },
     after: { total: after.score.total, max: after.score.max, level: after.level.id },
     delta: { total: deltaTotal, level: deltaLevel },

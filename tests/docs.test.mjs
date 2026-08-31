@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GAPS, SUBSYSTEMS } from '../scripts/lib/rubric.mjs';
 import { LEVELS } from '../scripts/lib/level.mjs';
+import { DEFAULT_PROFILE, SUPPORTED_PROFILES } from '../scripts/lib/profiles.mjs';
 import { DANGEROUS_PATTERNS, checkCommand } from '../scripts/lib/safety.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,6 +59,31 @@ test('rubric docs list every subsystem and level', () => {
     const body = read(f);
     for (const s of SUBSYSTEMS) assert.ok(body.includes(s), `${f} missing subsystem ${s}`);
     for (const l of LEVELS) assert.ok(body.includes(`L${l.id}`), `${f} missing L${l.id}`);
+  }
+});
+
+test('profile documentation matches the implementation contract', () => {
+  assert.equal(DEFAULT_PROFILE, 'repository');
+  assert.deepEqual(SUPPORTED_PROFILES, ['repository', 'harness-distribution']);
+  for (const file of [
+    'README.md', 'README.zh-CN.md',
+    'references/rubric.md', 'references/rubric.zh-CN.md',
+  ]) {
+    const body = read(file);
+    for (const profile of SUPPORTED_PROFILES) {
+      assert.ok(body.includes(profile), `${file} missing profile ${profile}`);
+    }
+    assert.ok(body.includes('**/skills/**/SKILL.md'), `${file} missing skill discovery shape`);
+    assert.ok(body.includes('**/agents/*.md'), `${file} missing agent discovery shape`);
+    assert.ok(body.includes('**/workflows/*'), `${file} missing workflow discovery shape`);
+    assert.ok(body.includes('.github/workflows'), `${file} missing GitHub workflow exclusion`);
+    assert.match(body, /diff/i, `${file} missing cross-profile diff boundary`);
+  }
+  assert.match(read('README.md'), /cannot change[^.]{0,100}(subsystem score|score)/i);
+  assert.match(read('README.zh-CN.md'), /不能改变[^。]{0,100}(子系统分数|总分)/);
+  for (const file of ['ROADMAP.md', 'ROADMAP.zh-CN.md']) {
+    assert.match(read(file), /v1\.3/);
+    assert.match(read(file), /harness-distribution/);
   }
 });
 

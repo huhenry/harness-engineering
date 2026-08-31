@@ -8,6 +8,7 @@ import { loadConfig } from '../scripts/lib/config.mjs';
 import { computeLevel } from '../scripts/lib/level.mjs';
 import { detectStack } from '../scripts/lib/stack.mjs';
 import { SCORERS } from '../scripts/lib/scorers/index.mjs';
+import { runAssess } from '../scripts/assess.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = new Date('2026-08-10T00:00:00Z');
@@ -72,4 +73,54 @@ test('good-repo with passing evidence reaches L4', () => {
 test('scoring is deterministic across repeated runs', () => {
   touchProgress();
   assert.deepEqual(assess('good-repo').scores, assess('good-repo').scores);
+});
+
+function reportFor(fixture, profile) {
+  return runAssess({
+    repoPath: join(ROOT, 'fixtures', fixture),
+    lang: 'en',
+    profile,
+    now: NOW,
+  });
+}
+
+test('ordinary fixture scores are identical with the distribution profile on or off', () => {
+  for (const fixture of ['bad-repo', 'mid-repo', 'good-repo']) {
+    const ordinary = reportFor(fixture, 'repository');
+    const distribution = reportFor(fixture, 'harness-distribution');
+    assert.deepEqual(
+      distribution.subsystems.map((s) => [s.id, s.score]),
+      ordinary.subsystems.map((s) => [s.id, s.score]),
+      fixture,
+    );
+    assert.deepEqual(distribution.score, ordinary.score, fixture);
+    assert.equal(distribution.level.id, ordinary.level.id, fixture);
+  }
+});
+
+test('albert-shaped fixture resolves distributed loop gaps without gaining a point', () => {
+  const ordinary = reportFor('albert-shaped', 'repository');
+  const distribution = reportFor('albert-shaped', 'harness-distribution');
+  assert.deepEqual(
+    distribution.subsystems.map((s) => [s.id, s.score]),
+    ordinary.subsystems.map((s) => [s.id, s.score]),
+  );
+  assert.deepEqual(distribution.score, ordinary.score);
+  assert.equal(distribution.level.id, ordinary.level.id);
+
+  const loopGaps = distribution.subsystems.find((s) => s.id === 'loop').gaps.map((g) => g.id);
+  for (const id of [
+    'loop.none', 'loop.no-entrypoint', 'loop.no-stop-condition',
+    'loop.no-budget-cap', 'loop.no-maker-checker', 'loop.no-rollback',
+  ]) {
+    assert.ok(!loopGaps.includes(id), `distribution profile still reports ${id}`);
+  }
+
+  const allIds = distribution.subsystems.flatMap((s) => s.gaps.map((g) => g.id));
+  for (const id of [
+    'instructions.missing', 'tools.no-entrypoint', 'feedback.no-tests',
+    'feedback.no-declared-commands', 'feedback.no-ci',
+  ]) {
+    assert.ok(allIds.includes(id), `distribution profile hid the root-level gap ${id}`);
+  }
 });

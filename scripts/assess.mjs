@@ -9,6 +9,12 @@ import { loadConfig } from './lib/config.mjs';
 import { detectStack } from './lib/stack.mjs';
 import { SCORERS } from './lib/scorers/index.mjs';
 import { buildReport, renderMarkdown, allGaps } from './lib/report.mjs';
+import {
+  applyDiagnosticOverlay,
+  assertProfile,
+  DEFAULT_PROFILE,
+  profileOverlay,
+} from './lib/profiles.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -89,16 +95,21 @@ function loadEvidence(ctx, now) {
  * pick up the go.mod files nested under fixtures/ and misdetect itself as a
  * Go project.
  */
-export function runAssess({ repoPath, lang, configPath, now }) {
+export function runAssess({ repoPath, lang, configPath, profile = DEFAULT_PROFILE, now }) {
+  const canonicalProfile = assertProfile(profile);
   const ctx = createScanContext(repoPath);
   const config = loadConfig(ctx, { configPath });
   const scanCtx = createScanContext(repoPath, { ignore: config.ignore });
   const stack = detectStack(scanCtx);
   const { report: verifyReport, verifiedAt, reason: evidenceReason } = loadEvidence(scanCtx, now);
-  const results = {};
+  const baseResults = {};
   for (const s of SCORERS) {
-    results[s.id] = s.score({ ctx: scanCtx, stack, config, verifyReport, now });
+    baseResults[s.id] = s.score({ ctx: scanCtx, stack, config, verifyReport, now });
   }
+  const results = applyDiagnosticOverlay(
+    baseResults,
+    profileOverlay({ profile: canonicalProfile, ctx: scanCtx, config }),
+  );
   return buildReport({
     repo: repoPath, stack, results,
     // A single source of truth: `evidenceReason` is null exactly when
@@ -110,7 +121,7 @@ export function runAssess({ repoPath, lang, configPath, now }) {
     // PRUNE_DIRS/DEFAULT_IGNORE and docker.runtimePins/manifest).
     hasEvidence: evidenceReason === null,
     evidenceReason,
-    verifiedAt, toolVersion: toolVersion(), now, lang,
+    verifiedAt, toolVersion: toolVersion(), now, lang, profile: canonicalProfile,
   });
 }
 
@@ -134,15 +145,17 @@ function main(argv) {
       lang: { type: 'string' },
       out: { type: 'string' },
       config: { type: 'string' },
+      profile: { type: 'string' },
       'min-level': { type: 'string' },
     },
     allowPositional: true,
   });
   const minLevel = parseMinLevel(values['min-level']);
+  const profile = assertProfile(values.profile);
   const repoPath = resolveRepoPath(positionals, process.cwd());
   const ctx = createScanContext(repoPath);
   const lang = assertLang(values.lang ?? loadConfig(ctx, { configPath: values.config }).lang);
-  const report = runAssess({ repoPath, lang, configPath: values.config, now: new Date() });
+  const report = runAssess({ repoPath, lang, configPath: values.config, profile, now: new Date() });
 
   const output = values.json ? `${JSON.stringify(report, null, 2)}\n` : `${renderMarkdown(report, lang)}\n`;
   if (values.out) writeFileSync(values.out, output);
