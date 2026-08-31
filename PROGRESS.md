@@ -84,13 +84,31 @@ should be able to trust it instead of re-deriving state from the diff.
   `../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`. It locks
   the default `repository` behavior, the explicit `harness-distribution` profile, a diagnostic-only
   gap overlay that cannot change scores, cross-profile diff refusal, and a clean-room
-  `albert-shaped` fixture. No v1.3 product code has started.
+  `albert-shaped` fixture.
+- v1.3 harness-distribution profile: added one canonical profile contract shared by CLI, library,
+  reports, and diffs. The default remains `repository`; the explicit `harness-distribution` mode
+  discovers readable root or nested skills, agent roles, and non-GitHub workflow definitions. Its
+  overlay can resolve only existing Loop diagnostics and add file evidence after scoring; it has no
+  access to scores, evidence caps, totals, or levels. Reports record the profile, legacy reports
+  without the field mean `repository`, and cross-profile diffs fail as usage errors before any
+  arithmetic.
+- v1.3 clean-room acceptance and documentation: independently authored
+  `fixtures/albert-shaped/` and locked in both boundaries. Its six distributed Loop gaps resolve
+  under the profile, while root instructions, product entrypoint, tests, declared commands, and CI
+  remain missing; both profiles stay 0/24 L0. Historical fixture scores remain 0/24 L0, 11/24 L2,
+  and 16/24 L3. The bilingual README, rubric, and roadmap document the shipped behavior and the
+  still-deferred DAG/runtime scope.
+- v1.3 local release evidence: `node --test` passed 611/611; the exact declared syntax command
+  passed; `node scripts/verify.mjs . --run` passed bootstrap/test/lint and wrote fresh evidence.
+  Self-assessment is 23/24 L5 under both profiles with identical subsystem scores, package-lock
+  still contains only the root package, and a real cross-profile diff exits 2.
 
 ## In Progress
 
-- v1.1 and v1.2 are complete and merged into `main`. The next implementation milestone is v1.3,
-  the explicit `assess --profile harness-distribution` profile; its task-level plan is complete,
-  but the implementation branch and product code have not started.
+- v1.3 product work is complete and locally validated on
+  `v1.3-harness-distribution-profile`. Remaining release work is to push the branch, open a Draft
+  PR, and observe the real Node 20/22/24 and self-hosting Action checks. Merging still requires a
+  separate explicit approval.
 
 ## Blocked
 

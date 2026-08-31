@@ -3,86 +3,52 @@
 
 ## Previous session
 
-v1.1 and v1.2 are both merged into `main`:
+v1.2 is complete on `main`. PR #2 was marked Ready and merged after separate explicit approval as
+`5cbcc226d73cc02ef58cb399b1a73c9cf2085868`; post-merge CI run `33350551289` passed Node 20/22/24
+and the push-only badge refresh. Main's lifecycle closeout is `f62c173`.
 
-- PR #1: https://github.com/huhenry/harness-engineering/pull/1,
-  `v1.1-hardening` → `main`, merged as `a4615fe359c6de7e814bef6c36740a97db410832` after a fresh
-  head/check/mergeability review. The post-merge `main` CI run `33348900204` passed Node 20/22 and
-  self-assessment. Local `main` was safely fast-forwarded to the same commit.
-- PR #2: https://github.com/huhenry/harness-engineering/pull/2,
-  `v1.2-adoption-levers` → `main`. It was retargeted from `v1.1-hardening` only after PR #1's
-  post-merge CI passed, then merged after separate explicit approval as
-  `5cbcc226d73cc02ef58cb399b1a73c9cf2085868`. Post-merge `main` CI run `33350551289` passed
-  Node 20/22/24 and the push-only badge-refresh job on the current v7 official Actions.
+v1.3 is implemented on `v1.3-harness-distribution-profile` in four reviewable commits:
 
-The publication review found and fixed three issues before the Draft PRs were treated as ready:
+- `a1132d7` adds the canonical `repository` / `harness-distribution` profile contract, report field,
+  CLI option, legacy-report normalization, and cross-profile diff refusal.
+- `78f9126` shares Loop fact classification and adds the diagnostic-only distribution overlay for
+  root or nested `skills`, `agents`, and non-GitHub `workflows` files.
+- `80d8703` adds the independently authored `fixtures/albert-shaped/` acceptance fixture, read-only
+  CLI coverage, score invariants, and the rule that unreadable files produce no fact or evidence.
+- `2cac399` documents the profile and its non-goals in both READMEs, rubric references, and roadmaps,
+  with a documentation contract test.
 
-- `baseExportError` still told users to copy `actions/checkout@v4` after the rest of the product had
-  moved to v7. Its recovery example now says v7 and a regression test prevents drift.
-- `.github/workflows/ci.yml` granted `contents: write` at workflow scope, exposing a write token to
-  same-repository PR test code. Read is now the default; only a push-to-main `refresh-badge` job gets
-  write. That job runs with `always()`, records failed verify/assess outcomes, refreshes the badge
-  from the fresh evidence, then restores the failure status.
-- The Action declared six outputs but the self-hosting workflow never consumed them. The workflow
-  now gives the Action step an id and validates that every output is present, typed, and
-  arithmetically coherent on a real runner.
+The locked external plan remains at
+`../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`. v1.3 does not
+add a task schema, permissions frontmatter, runner, DAG engine, or GitHub Action profile input.
 
-Live acceptance evidence on PR #2:
+Local acceptance on Node 22.23.0:
 
-- First harness-diff run `32806355527` created comment id `5404806581`.
-- Second run `32806550817` logged `Updated the existing harness comment (id 5404806581)` and the API
-  still returned exactly one comment carrying `<!-- harness-engineering-diff -->`; its `created_at`
-  stayed `2026-08-25T03:45:25Z` while `updated_at` moved to `2026-08-25T03:48:36Z`.
-- The real output consumer passed with score `21 → 21 (0)`, level `3 → 3`, and
-  `regression=false`. L3/21 is expected in a clean PR checkout: neither side has the gitignored
-  `.harness/verify-report.json`, so the comparison is symmetric and evidence-free.
-- The retargeted run repeated the same `21 → 21 (0)`, L3 → L3, `regression=false` result against
-  base commit `a4615fe`; it updated comment `5404806581` at `2026-08-31T02:00:21Z`, and the API still
-  returned exactly one marked comment.
-- The diff job's runner log proved its effective token permissions were `Contents: read` and
-  `PullRequests: write`; it emitted no job-summary file-command warning. All PR #1 and PR #2 checks
-  passed, including PR #2's Node 20/22/24 matrix and self-assessment.
-
-Local verification after the publication fixes: Node 22.23.0 and Node 24.11.1 both pass 587/587
-tests, the declared syntax command passes, `verify --run` passes bootstrap/test/lint, fixture scores
-remain 0/24 L0, 11/24 L2, and 16/24 L3, and the fresh self-assessment remains 23/24 L5. The v1.1
-snapshot was also independently checked in a Git-backed isolated export: 519/519 and its own
-bootstrap/test/lint evidence all passed.
-
-The next milestone now has a task-level plan outside the product checkout, per project convention:
-
-- `../harness-engineering-planning/2026-08-31-v1.3-harness-distribution-profile-plan.md`
-- Default assessment remains `repository`; the new mode is explicit
-  `assess --profile harness-distribution`.
-- The profile may correct diagnostic gap false positives and add file evidence, but its overlay has
-  no score field and cannot change subsystem scores, total score, or level.
-- Reports carry their profile, and `diff` refuses cross-profile comparisons so a scanning-policy
-  change cannot masquerade as a repository improvement.
-- `fixtures/albert-shaped/` must be independently authored and must keep missing root instructions,
-  tests, CI, and verification entrypoints visible. No v1.3 product code has started.
+- `node --test`: 611/611 passed.
+- `node --check scripts/action.mjs scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs
+  scripts/verify.mjs`: passed.
+- `node scripts/verify.mjs . --run`: bootstrap/test/lint all passed and fresh evidence was written.
+- Self-assessment: 23/24 L5 under both profiles, with all six subsystem scores identical.
+- Existing fixtures: 0/24 L0, 11/24 L2, and 16/24 L3, unchanged.
+- `albert-shaped`: 0/24 L0 in both profiles; default reports six Loop gaps, distribution reports
+  none, while root-level gaps remain.
+- Cross-profile diff: refused with exit 2. `package-lock.json`: root package only, no dependencies.
 
 ## Next session
 
-1. Read the v1.3 task-level plan, create `v1.3-harness-distribution-profile` from the latest `main`,
-   and execute Task 1 test-first. Do not jump directly to the runner or task-schema milestones.
-2. Keep the v1.3 score-neutral invariant at every commit: ordinary fixture scores and self score
-   must not rise under the profile, and different-profile reports must never be diffed.
-3. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
-   not use `pull_request_target` as a workaround; the job summary remains the safe fallback.
+1. Push `v1.3-harness-distribution-profile`, open a Draft PR against `main`, and record the PR URL
+   and real remote check run ids here after they finish.
+2. Recheck the PR head, mergeability, all Node 20/22/24 jobs, self-assessment, and the Action's one
+   marked comment before presenting it for review.
+3. Do not mark Ready or merge without a separate explicit user approval. A release tag and
+   Marketplace publication remain separate decisions.
 
-Keep these deferred facts visible:
-
-- Marketplace publication still needs a release tag; README deliberately uses `@main` only because
-  no tag exists and tells consumers to pin a tag or commit as soon as one is available.
-- `instructions.unfilled-template` and the broader cross-scorer placeholder semantics remain open in
-  `ROADMAP.md`; do not fold them casually into the profile milestone because they can move scores.
-- `loop.no-entrypoint` still lacks a permanent fixture, suppression has no severity dimension, and
-  the Claude Code plugin invocation acceptance remains a human interactive check.
-- The external evolution design's v1.2 paragraph still says `node20`; product code and current GitHub
-  platform evidence supersede that stale runtime detail. Preserve the design's locked architectural
-  decisions while using `node24` for the shipped Action.
+Keep these boundaries visible: `harness-distribution` changes diagnostics and evidence only, never
+scores or levels; `.github/workflows` remains Feedback CI evidence; an unreadable distribution file
+cannot resolve a fact; nested harness content is not root-repository proof; the GitHub Action stays
+on the default profile in v1.3.
 
 ## Blocked
 
-Nothing in code or planning. The fork-only warning path needs a real fork PR for live acceptance;
-Marketplace publication needs a deliberate release-tag decision.
+Nothing in code or local validation. The optional fork-only warning path still needs a real fork PR
+for live acceptance, and Marketplace publication needs a deliberate release-tag decision.

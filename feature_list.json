@@ -38,6 +38,10 @@
     { "id": "ci-write-token-isolation", "title": "CI defaults to contents read and grants contents write only to the push-main badge job, which refreshes before propagating failed gates", "status": "done" },
     { "id": "github-action-live-acceptance", "title": "Self-hosting PR workflow live-validates all six Action outputs and updates one marked pull-request comment in place", "status": "done" },
     { "id": "staged-release-integration", "title": "Merge the reviewed v1.1 foundation, retarget v1.2 onto main, and merge it after independent green CI", "status": "done" },
-    { "id": "v1.3-distribution-profile-plan", "title": "Task-level implementation plan for a score-neutral harness-distribution assessment profile and clean-room fixture", "status": "done" }
+    { "id": "v1.3-distribution-profile-plan", "title": "Task-level implementation plan for a score-neutral harness-distribution assessment profile and clean-room fixture", "status": "done" },
+    { "id": "v1.3-profile-contract", "title": "Explicit repository and harness-distribution profile contract shared by assess reports and diff", "status": "done" },
+    { "id": "v1.3-distribution-loop-overlay", "title": "Readable skill agent and workflow discovery with score-neutral Loop diagnostic overlay", "status": "done" },
+    { "id": "v1.3-cross-profile-refusal", "title": "Legacy repository normalization and usage-error refusal for cross-profile diffs", "status": "done" },
+    { "id": "v1.3-clean-room-fixture", "title": "Independently authored albert-shaped fixture proving distributed recognition without root proof or score movement", "status": "done" }
   ]
 }
