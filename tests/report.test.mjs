@@ -44,6 +44,7 @@ const build = (over = {}) => buildReport({
 test('report matches the documented schema shape', () => {
   const r = build();
   assert.equal(r.schemaVersion, SCHEMA_VERSION);
+  assert.equal(r.profile, 'repository');
   assert.deepEqual(r.tool, { name: 'harness-engineering', version: '0.1.0' });
   assert.equal(r.repo, '/tmp/demo');
   assert.equal(r.generatedAt, NOW.toISOString());
@@ -54,6 +55,12 @@ test('report matches the documented schema shape', () => {
   // "why" invariant is enforced by assess.mjs's runAssess, not by
   // buildReport itself, which just carries whatever the caller passed).
   assert.deepEqual(r.evidence, { verified: false, verifiedAt: null, reason: null });
+});
+
+test('a non-default profile is disclosed in markdown while the default stays quiet', () => {
+  assert.doesNotMatch(renderMarkdown(build(), 'en'), /Profile:/);
+  const report = build({ profile: 'harness-distribution' });
+  assert.match(renderMarkdown(report, 'en'), /Profile: harness-distribution/);
 });
 
 test('subsystems appear in canonical order with max 4', () => {

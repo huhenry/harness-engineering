@@ -51,6 +51,7 @@ test('runAssess returns a schema-valid report for good-repo', (t) => {
   const repo = copyFixture(t, 'good-repo');
   const r = runAssess({ repoPath: repo, lang: 'en', now: NOW });
   assert.equal(r.schemaVersion, 1);
+  assert.equal(r.profile, 'repository');
   assert.equal(r.level.id, 3);
   assert.equal(r.evidence.verified, false);
   // No .harness/verify-report.json exists at all — the reason must say so,
@@ -140,6 +141,37 @@ test('--json emits parseable JSON on stdout', (t) => {
   const { out } = run([repo, '--json'], ROOT);
   const parsed = JSON.parse(out);
   assert.equal(parsed.level.id, 2);
+});
+
+test('the default profile and explicit repository profile have identical assessment semantics', (t) => {
+  const repo = copyFixture(t, 'mid-repo');
+  const implicit = JSON.parse(run([repo, '--json'], ROOT).out);
+  const explicit = JSON.parse(run([repo, '--json', '--profile', 'repository'], ROOT).out);
+  assert.equal(implicit.profile, 'repository');
+  assert.equal(explicit.profile, 'repository');
+  assert.deepEqual(explicit.score, implicit.score);
+  assert.deepEqual(explicit.level, implicit.level);
+  assert.deepEqual(
+    explicit.subsystems.map((s) => [s.id, s.score, s.gaps.map((g) => g.id)]),
+    implicit.subsystems.map((s) => [s.id, s.score, s.gaps.map((g) => g.id)]),
+  );
+});
+
+test('harness-distribution is explicit and auditable in JSON and markdown', (t) => {
+  const repo = copyFixture(t, 'mid-repo');
+  const json = JSON.parse(run([repo, '--json', '--profile', 'harness-distribution'], ROOT).out);
+  assert.equal(json.profile, 'harness-distribution');
+  const markdown = run([repo, '--profile', 'harness-distribution'], ROOT).out;
+  assert.match(markdown, /harness-distribution/);
+});
+
+test('an unknown profile exits 2 rather than silently falling back', (t) => {
+  const repo = copyFixture(t, 'mid-repo');
+  const r = run([repo, '--profile', 'unknown'], ROOT);
+  assert.equal(r.code, 2);
+  assert.match(r.out, /unknown/);
+  assert.match(r.out, /repository/);
+  assert.match(r.out, /harness-distribution/);
 });
 
 test('--min-level gates the exit code', (t) => {

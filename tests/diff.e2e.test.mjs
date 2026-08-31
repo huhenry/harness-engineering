@@ -74,8 +74,35 @@ test('--json emits the DiffResult and nothing else', () => {
   assert.equal(r.status, 0, r.stderr);
   const parsed = JSON.parse(r.stdout);
   assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.profile, 'repository');
   assert.equal(parsed.regression, false);
   assert.equal(parsed.delta.total, 16);
+});
+
+test('reports from different profiles are a usage error, not a fabricated gap improvement', () => {
+  const d = tempDir('harness-diff-profile-');
+  const before = assessTo(d, 'mid-repo', 'before.json');
+  const after = assessTo(d, 'mid-repo', 'after.json');
+  const changed = JSON.parse(readFileSync(after, 'utf8'));
+  changed.profile = 'harness-distribution';
+  writeFileSync(after, JSON.stringify(changed));
+  const r = run([before, after]);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /profile/i);
+  assert.match(r.stderr, /repository/);
+  assert.match(r.stderr, /harness-distribution/);
+});
+
+test('a legacy report without profile remains compatible with repository reports', () => {
+  const d = tempDir('harness-diff-legacy-profile-');
+  const before = assessTo(d, 'mid-repo', 'before.json');
+  const after = assessTo(d, 'mid-repo', 'after.json');
+  const legacy = JSON.parse(readFileSync(before, 'utf8'));
+  delete legacy.profile;
+  writeFileSync(before, JSON.stringify(legacy));
+  const r = run([before, after, '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).profile, 'repository');
 });
 
 test('--out writes to a file and prints nothing', () => {
