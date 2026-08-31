@@ -3,15 +3,16 @@
 
 ## Previous session
 
-v1.1 and v1.2 are complete and published as two unmerged Draft PRs:
+v1.1 is merged and v1.2 is now a standalone Draft PR against `main`:
 
 - PR #1: https://github.com/huhenry/harness-engineering/pull/1,
-  `v1.1-hardening` → `main`. Remote `main` was still at `f15c6c5`, 25 commits behind local `main`, so
-  the completed v1.1 work was published on a branch rather than pushed directly to `main`.
+  `v1.1-hardening` → `main`, merged as `a4615fe359c6de7e814bef6c36740a97db410832` after a fresh
+  head/check/mergeability review. The post-merge `main` CI run `33348900204` passed Node 20/22 and
+  self-assessment. Local `main` was safely fast-forwarded to the same commit.
 - PR #2: https://github.com/huhenry/harness-engineering/pull/2,
-  `v1.2-adoption-levers` → `v1.1-hardening`. This stacked base keeps v1.2's diff CLI and GitHub Action
-  review separate from PR #1. It must be retargeted to `main` after PR #1 merges and before PR #2 is
-  considered for merge.
+  `v1.2-adoption-levers` → `main`. It was retargeted from `v1.1-hardening` only after PR #1's
+  post-merge CI passed. It remains Draft and must not be merged without separate explicit human
+  approval.
 
 The publication review found and fixed three issues before the Draft PRs were treated as ready:
 
@@ -46,12 +47,12 @@ bootstrap/test/lint evidence all passed.
 
 ## Next session
 
-1. Review and merge PR #1 only with explicit human approval.
-2. After PR #1 merges, retarget PR #2 from `v1.1-hardening` to `main`, let checks rerun, and review it.
-   Do not merge PR #2 without separate explicit approval.
-3. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
+1. Inspect PR #2's latest head, retargeted `main` diff, all CI checks, and the single marked Action
+   comment. If the review is clean, report it as ready for human review; do not merge it without
+   separate explicit approval.
+2. If a fork is available, optionally live-check the documented warning-only 403 comment path. Do
    not use `pull_request_target` as a workaround; the job summary remains the safe fallback.
-4. After v1.2 is accepted, write a task-level implementation plan for v1.3 before changing product
+3. After v1.2 is accepted, write a task-level implementation plan for v1.3 before changing product
    code. The locked scope is the explicit `assess --profile harness-distribution` profile in
    `../harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`: recognize
    `skills/**/SKILL.md`, `agents/*.md`, and `workflows/*`, but only improve gap accuracy, never score.
@@ -72,5 +73,5 @@ Keep these deferred facts visible:
 
 ## Blocked
 
-Nothing in code. Both PRs are intentionally Draft; merge and retarget decisions require explicit
-human approval. The fork-only warning path needs a real fork PR for live acceptance.
+Nothing in code. PR #2 remains intentionally Draft and needs separate explicit human approval to
+merge. The fork-only warning path needs a real fork PR for live acceptance.

@@ -66,21 +66,26 @@ should be able to trust it instead of re-deriving state from the diff.
   The self-hosting workflow now consumes and validates all six Action outputs. Because remote
   `main` was still 25 commits behind local `main`, publication uses two reviewable Draft PRs instead
   of one 32-commit change: PR #1 (`v1.1-hardening` → `main`) and stacked PR #2
-  (`v1.2-adoption-levers` → `v1.1-hardening`). Both are green. PR #2's first Action run created
-  comment `5404806581`; its second run validated `21 → 21 (0)`, L3 → L3, `regression=false`, and
-  updated that same comment. GitHub's API still reports exactly one marked comment.
+  (`v1.2-adoption-levers` → `v1.1-hardening`). PR #2's first Action run created comment
+  `5404806581`; its second run validated `21 → 21 (0)`, L3 → L3, `regression=false`, and updated
+  that same comment. GitHub's API still reports exactly one marked comment.
+- Staged release integration: after a fresh remote-state review, PR #1 was marked Ready and merged
+  into `main` as `a4615fe`. Post-merge CI run `33348900204` passed Node 20/22 and self-assessment.
+  Local `main` was then safely fast-forwarded, and Draft PR #2 was retargeted from
+  `v1.1-hardening` to `main`. Its v1.2-only diff remains mergeable; this release-state update will
+  trigger the fresh retargeted CI that must pass before review handoff.
 
 ## In Progress
 
-- v1.1 and v1.2 are complete, published as Draft PR #1 and stacked Draft PR #2, and not merged.
-  Review/merge order is PR #1 first, then retarget PR #2 to `main` before considering its merge.
-  The next planned product milestone is v1.3, the explicit
+- v1.1 is merged into `main`. v1.2 is complete and remains intentionally unmerged as Draft PR #2,
+  now based directly on `main`; its fresh retargeted CI/review is the active release gate. The next
+  planned product milestone is v1.3, the explicit
   `assess --profile harness-distribution` profile described in the external
   `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`. No v1.3 product code
   has started.
 
 ## Blocked
 
-- Nothing in code. Merging either Draft PR requires explicit human approval. The ordinary
-  same-repository comment create/update path is live-accepted; the warning-only 403 path still needs
-  a real fork PR if that optional external acceptance is desired.
+- Nothing in code. PR #2 remains Draft and requires separate explicit human approval before merge.
+  The ordinary same-repository comment create/update path is live-accepted; the warning-only 403
+  path still needs a real fork PR if that optional external acceptance is desired.
