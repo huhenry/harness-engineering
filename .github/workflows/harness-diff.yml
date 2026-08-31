@@ -1,0 +1,89 @@
+# This repository is the Action's first user.
+#
+# `uses: ./` runs the action.yml sitting at this repository's root against
+# this repository's own pull requests, so the Action is exercised end to end
+# on every change rather than only at release time. If the Action breaks,
+# the pull request that broke it is the one that says so.
+name: harness-diff
+
+on: pull_request
+
+# contents: read is all the action needs -- it exports the base commit with
+# `git archive`, which reads. pull-requests: write is what lets it post and
+# then edit its comment. Nothing here needs contents: write; the badge-
+# refreshing job that does live in ci.yml, deliberately separate.
+#
+# On a pull request opened from a FORK, GitHub downgrades GITHUB_TOKEN to
+# read-only no matter what this block says, so the comment step will get a
+# 403 and warn. That is accepted rather than worked around: the workaround
+# is `pull_request_target`, which runs with a writable token in the context
+# of the base repository while checking out the fork's code, and is a
+# well-known way to hand an attacker write access to the repository. A
+# missing comment is a smaller problem than that, and the diff is still in
+# the job summary.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Required. The default depth of 1 does not fetch the base commit,
+          # so `git archive <base-sha>` has nothing to export and the action
+          # stops with an error pointing right back at this line.
+          fetch-depth: 0
+
+      # Deliberately the first thing that runs after checkout, and in
+      # particular BEFORE anything that could run `verify --run`. That
+      # command writes .harness/verify-report.json, which is never tracked
+      # by git -- so it would exist on the head side and could not possibly
+      # exist on the `git archive` base side, and Feedback would show an
+      # improvement nobody made. The action warns when it detects that
+      # asymmetry; this ordering means it never has to.
+      - name: Harness score delta
+        id: harness
+        uses: ./
+        with:
+          # This repository holds itself to the gate it does not impose on
+          # anyone else. `fail-on-regression` defaults to false so that
+          # installing the action cannot redden someone else's pipeline on
+          # day one; that reasoning does not apply to the repository that
+          # ships it, where a scoring regression is exactly what should
+          # block a merge.
+          fail-on-regression: 'true'
+          lang: 'en'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A declared output is not evidence until a real workflow consumes it.
+      # Keep this generic: the repository's score may legitimately move, but
+      # the six values must remain present, typed, and arithmetically coherent.
+      - name: Validate Action outputs
+        env:
+          SCORE_BEFORE: "${{ steps.harness.outputs['score-before'] }}"
+          SCORE_AFTER: "${{ steps.harness.outputs['score-after'] }}"
+          SCORE_DELTA: "${{ steps.harness.outputs['score-delta'] }}"
+          LEVEL_BEFORE: "${{ steps.harness.outputs['level-before'] }}"
+          LEVEL_AFTER: "${{ steps.harness.outputs['level-after'] }}"
+          REGRESSION: "${{ steps.harness.outputs['regression'] }}"
+        run: |
+          node -e '
+            const names = ["SCORE_BEFORE", "SCORE_AFTER", "SCORE_DELTA", "LEVEL_BEFORE", "LEVEL_AFTER"];
+            for (const name of names) {
+              if (!/^[+-]?\d+$/.test(process.env[name] || "")) {
+                throw new Error(`${name} is missing or is not an integer: ${JSON.stringify(process.env[name])}`);
+              }
+            }
+            const before = Number(process.env.SCORE_BEFORE);
+            const after = Number(process.env.SCORE_AFTER);
+            const delta = Number(process.env.SCORE_DELTA);
+            const levelBefore = Number(process.env.LEVEL_BEFORE);
+            const levelAfter = Number(process.env.LEVEL_AFTER);
+            if (after - before !== delta) throw new Error(`score delta is inconsistent: ${before} -> ${after}, got ${delta}`);
+            if (![levelBefore, levelAfter].every((n) => n >= 0 && n <= 5)) throw new Error("level output is outside 0..5");
+            if (!["true", "false"].includes(process.env.REGRESSION)) throw new Error("regression output is not boolean text");
+            console.log(`validated outputs: score ${before} -> ${after} (${process.env.SCORE_DELTA}), level ${levelBefore} -> ${levelAfter}, regression=${process.env.REGRESSION}`);
+          '

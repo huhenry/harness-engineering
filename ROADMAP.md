@@ -78,7 +78,8 @@ design document.
 These come from the project's original design document, which lives outside this repository
 (planning documents for open-source repos are kept in a sibling directory by project convention,
 so they are deliberately not part of a checkout). They are directions rather than scheduled work,
-and none of them is started.
+one of them — the GitHub Action — shipped in
+v1.2 and is struck through below. The rest are not started.
 
 - **Graph engineering.** Multi-agent orchestration: defining a DAG of agent steps, and acceptance
   criteria for the graph as a whole rather than for one agent at a time. The Loop subsystem in this
@@ -86,11 +87,14 @@ and none of them is started.
 - **More stack detectors.** Rust, Java, Swift, and embedded PlatformIO. The detector table in
   `scripts/lib/stack.mjs` is designed to be extended by adding a signature, not by editing scoring
   logic — a new stack should not require touching any scorer.
-- **`harness diff`.** Score movement between two assessments of the same repository, so a team can
-  see whether their harness is improving rather than only what it scores today.
-- **A GitHub Action.** A marketplace action that comments the harness score delta on a pull
+- ~~**A GitHub Action.** A marketplace action that comments the harness score delta on a pull
   request, turning the assessment into a review-time signal instead of something someone remembers
-  to run.
+  to run.~~ **Shipped in v1.2.** `action.yml` at the repository root, running the committed
+  `scripts/action.mjs` on `node24` with no dependencies and no build step; this repository runs it
+  against its own pull requests in `.github/workflows/harness-diff.yml`. See the README's Action
+  section for inputs, the `fetch-depth: 0` requirement, and the fork limitation. What is
+  deliberately *not* done: publishing a Marketplace listing, which needs a release tag this
+  repository does not have yet.
 - **A web dashboard.** Assessment results across many repositories in one view.
 
 ## Other minor items noted during development (not v1.1 candidates, informational)

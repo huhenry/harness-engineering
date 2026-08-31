@@ -13,6 +13,6 @@ test:
 	node --test
 
 lint:
-	node --check scripts/assess.mjs scripts/scaffold.mjs scripts/verify.mjs
+	node --check scripts/action.mjs scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs
 
 check: test lint

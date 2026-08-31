@@ -249,6 +249,32 @@ export const MESSAGES = {
     'scaffold.applyHint': 'This was a dry run — nothing above was actually written. Re-run with --apply to write these files.',
     'scaffold.failure': 'Failed to write {target}: {message}',
     'scaffold.writtenSoFar': 'Already written to disk before this failure (not rolled back): {list}',
+
+    // --- diff.mjs (task 2): CLI report copy ---
+    'severity.high': 'high',
+    'severity.medium': 'medium',
+    'severity.low': 'low',
+    'diff.title': 'Harness Diff Report',
+    'diff.score': 'Score: {before} → {after} ({delta})',
+    'diff.level': 'Level: L{before} → L{after} ({delta})',
+    'diff.regression': 'Regression detected: {reasons}',
+    'diff.subsystemsHeading': 'Subsystem Scores',
+    'diff.colSubsystem': 'Subsystem',
+    'diff.colScore': 'Before → After',
+    'diff.colDelta': 'Delta',
+    'diff.fixedHeading': 'Fixed',
+    'diff.introducedHeading': 'Introduced',
+    'diff.noGapChanges': 'No gap changes.',
+
+    // --- GitHub Action pull request comment ---
+    // The verdict line is the only part of the comment a reviewer is
+    // guaranteed to read, so each of the three cases has to say what
+    // actually happened in its own words. A regression must never be
+    // phrased in a way that could be skimmed as good news.
+    'action.verdict.regressed': 'This pull request **regressed** the harness score ({before} → {after}, {delta}). Reasons: {reasons}.',
+    'action.verdict.improved': 'This pull request **improved** the harness score ({before} → {after}, {delta}).',
+    'action.verdict.unchanged': 'This pull request left the harness score unchanged at {after}/{max} (L{level}).',
+    'action.footer': 'Posted by harness-engineering. This comment is edited in place on every push, never re-posted.',
   },
   zh: {
     'subsystem.instructions': '指令',
@@ -484,6 +510,28 @@ export const MESSAGES = {
     'scaffold.applyHint': '这是一次 dry-run —— 上面列出的内容都还没有真正写入。加上 --apply 才会真的写入这些文件。',
     'scaffold.failure': '写入 {target} 失败：{message}',
     'scaffold.writtenSoFar': '失败前已经真实写入磁盘的文件（不会回滚）：{list}',
+
+    // --- diff.mjs（task 2）：CLI 报告文案 ---
+    'severity.high': '高危',
+    'severity.medium': '中等',
+    'severity.low': '低',
+    'diff.title': 'Harness 对比报告',
+    'diff.score': '得分：{before} → {after}（{delta}）',
+    'diff.level': '等级：L{before} → L{after}（{delta}）',
+    'diff.regression': '检测到回归：{reasons}',
+    'diff.subsystemsHeading': '各子系统得分',
+    'diff.colSubsystem': '子系统',
+    'diff.colScore': '之前 → 之后',
+    'diff.colDelta': '变化',
+    'diff.fixedHeading': '已修复',
+    'diff.introducedHeading': '新引入',
+    'diff.noGapChanges': '差距无变化。',
+
+    // --- GitHub Action pull request comment ---
+    'action.verdict.regressed': '这个 PR 让 harness 分数**出现回归**（{before} → {after}，{delta}）。原因：{reasons}。',
+    'action.verdict.improved': '这个 PR 让 harness 分数**有所提升**（{before} → {after}，{delta}）。',
+    'action.verdict.unchanged': '这个 PR 没有改变 harness 分数，仍然是 {after}/{max}（L{level}）。',
+    'action.footer': '由 harness-engineering 发布。这条评论每次 push 都会就地更新，不会重复发新的。',
   },
 };
 

@@ -11,7 +11,8 @@ this exact repository, to close the gap it is describing.
 ## Stack
 
 Node.js 22.23 (this checkout's runtime; `package.json`'s `engines` field requires `>=20`, `.nvmrc`
-pins `20`, and CI's own matrix runs both `20` and `22`). ESM throughout (`"type": "module"`).
+pins `20`, and CI's own matrix runs `20`, `22`, and `24`). The GitHub Action itself declares the
+current `node24` JavaScript-action runtime. ESM throughout (`"type": "module"`).
 Zero runtime dependencies -- `package-lock.json` is a real, valid lockfile that pins exactly that
 ("no dependencies" is itself a reproducibility claim, not the absence of one).
 
@@ -36,7 +37,7 @@ what is written here, not a paraphrase of it.
 
 ```bash
 node --test
-node --check scripts/assess.mjs scripts/scaffold.mjs scripts/verify.mjs
+node --check scripts/action.mjs scripts/assess.mjs scripts/diff.mjs scripts/scaffold.mjs scripts/verify.mjs
 ```
 
 `node --test` takes **no path argument** -- it discovers every `tests/*.mjs`

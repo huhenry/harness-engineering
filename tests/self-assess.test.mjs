@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runAssess } from '../scripts/assess.mjs';
@@ -80,6 +81,36 @@ test('the CI workflow gates on min-level 4 and skips its own commits', () => {
   assert.match(ci, /22/);
 });
 
+test('CI covers the supported Node range through 24 on current official actions', () => {
+  const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  assert.match(ci, /node-version:\s*\[['"]20['"],\s*['"]22['"],\s*['"]24['"]\]/);
+  assert.match(ci, /actions\/checkout@v7/);
+  assert.match(ci, /actions\/setup-node@v7/);
+});
+
+test('CI confines contents: write to the push-only badge job and refreshes after failed checks', () => {
+  const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const writes = ci.match(/contents:\s*write/g) ?? [];
+  assert.equal(writes.length, 1, 'exactly one job may receive contents: write');
+  assert.match(ci, /^permissions:\n  contents: read$/m, 'the workflow default must be read-only');
+
+  const badgeStart = ci.indexOf('\n  refresh-badge:');
+  assert.notEqual(badgeStart, -1, 'expected a dedicated refresh-badge job');
+  const beforeBadge = ci.slice(0, badgeStart);
+  const badge = ci.slice(badgeStart);
+  assert.doesNotMatch(beforeBadge, /contents:\s*write/, 'PR-facing jobs must never receive a write token');
+  assert.match(badge, /if:\s*always\(\).*github\.event_name == 'push'.*refs\/heads\/main/);
+  assert.match(badge, /permissions:\n      contents: write/);
+  assert.match(badge, /id: verify[\s\S]*?continue-on-error: true/);
+  assert.match(badge, /id: assess[\s\S]*?continue-on-error: true/);
+  assert.match(badge, /name: Refresh badge\n        if: always\(\)/);
+  assert.match(
+    badge,
+    /if: steps\.verify\.outcome == 'failure' \|\| steps\.assess\.outcome == 'failure'/,
+    'badge refresh must finish before the job propagates either failed gate',
+  );
+});
+
 // Not part of the raw plan's own Step-1 skeleton; added because task-24-
 // brief.md's own acceptance bar (requirement 2 in the controller's dispatch
 // message) is "no `FILL:` string may remain anywhere" once this task is
@@ -119,4 +150,91 @@ test('this repository still scores State 4 under the placeholder rule', () => {
   const r = runAssess({ repoPath: ROOT, lang: 'en', now: new Date() });
   const state = r.subsystems.find((s) => s.id === 'state');
   assert.equal(state.score, 4, `State dropped to ${state.score}: ${state.gaps.map((g) => g.id).join(', ')}`);
+});
+
+// Fix round 1 of 5 (task-2 review) found the lint command --
+// `node --check scripts/*.mjs` -- hand-copied into three files
+// (harness.config.json's verify.lint, Makefile's lint target, AGENTS.md's
+// Verification code block) and none of them updated when scripts/diff.mjs
+// shipped, so `make lint` silently never syntax-checked the new CLI entry
+// point. That fix derived the SCRIPT LIST from disk but still hardcoded the
+// SET OF PLACES to check to those same three files -- and fix round 2 found
+// two more real copies it missed entirely (clean-state-checklist.md,
+// evaluator-rubric.md), stale in exactly the same way, because the guard
+// was never told to look there. Same defect, one layer up.
+//
+// This version derives BOTH from ground truth instead of enumerating
+// either: the script list from `scripts/*.mjs` on disk, and the set of
+// places to check by scanning every file `git ls-files` reports as tracked
+// -- the same source of truth this repository actually ships from, so a
+// file that isn't tracked can't be a stale published copy of anything. A
+// future copy of this command in a new doc, template, or CI workflow gets
+// caught automatically; no one has to remember to add it to a list here.
+//
+// Two things that look like copies but are not get excluded:
+//
+//   1. `.claude/settings.json`'s `"Bash(node --check *)"` permission
+//      pattern -- a wildcard ALLOW rule, not a command this project claims
+//      to run. Excluded EXPLICITLY by path below, not left to fall out of
+//      the regex by accident (it also happens not to match, since `*` is
+//      not a real scripts/<name>.mjs path, but that's not what makes the
+//      exclusion correct -- it's a permission grammar this test has no
+//      business parsing at all, so it is skipped before any regex sees it).
+//   2. This file's own comment above and its two `node --check` regex
+//      literals below -- neither is followed by a real `scripts/<name>.mjs`
+//      path (the comment says the glob `scripts/*.mjs`; the regex source
+//      says `.+$`), so the extraction regex below does not match them. No
+//      special-case needed for this file.
+//
+// `evaluator-rubric.md`'s copy is a markdown inline code span soft-wrapped
+// across two source lines (`scripts/assess.mjs scripts/diff.mjs\n
+// scripts/scaffold.mjs ...`). CommonMark renders a soft line break as a
+// single space, so this reads identically to a reader (or a renderer) as
+// the single-line version in the other four files; matching after
+// collapsing whitespace follows that same rule instead of demanding every
+// doc keep this one command artificially unwrapped forever.
+test('every "node --check scripts/…" copy in this repository names every scripts/*.mjs entry point', () => {
+  const scriptFiles = readdirSync(join(ROOT, 'scripts'), { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.mjs'))
+    .map((e) => e.name)
+    .sort();
+  assert.ok(scriptFiles.length > 0, 'expected at least one scripts/*.mjs entry point on disk');
+  const expected = `node --check ${scriptFiles.map((n) => `scripts/${n}`).join(' ')}`;
+
+  const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    // Explicit exclusion, not incidental: a permission pattern, not a copy
+    // of the command (see the comment above this test).
+    .filter((rel) => rel !== '.claude/settings.json');
+
+  // A real `scripts/<name>.mjs` path -- word characters, dots, hyphens
+  // only -- immediately (modulo whitespace) after `node --check`, one or
+  // more times. This is what rules out both a bare wildcard and a glob
+  // without needing to special-case either: `*` and `scripts/*.mjs` simply
+  // do not match `[\w.-]+\.mjs`.
+  const COMMAND_RE = /node --check((?: scripts\/[\w.-]+\.mjs)+)/g;
+
+  const occurrences = [];
+  for (const rel of tracked) {
+    let raw;
+    try {
+      raw = readFileSync(join(ROOT, rel), 'utf8');
+    } catch {
+      continue; // not a regular readable text file -- can't hold a copy
+    }
+    const normalized = raw.replace(/\s+/g, ' ');
+    for (const m of normalized.matchAll(COMMAND_RE)) {
+      occurrences.push({ file: rel, command: `node --check${m[1]}` });
+    }
+  }
+
+  // A guard that could vacuously pass by never matching anything is the
+  // same defect this milestone has already caught twice -- so the scan
+  // finding zero occurrences is itself a failure, not a silent skip.
+  assert.ok(occurrences.length > 0, 'expected to find at least one real "node --check scripts/…" copy in this repository');
+
+  for (const { file, command } of occurrences) {
+    assert.equal(command, expected, `${file} has a stale or divergent copy of the lint command`);
+  }
 });

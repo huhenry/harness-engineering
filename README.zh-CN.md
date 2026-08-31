@@ -126,18 +126,162 @@ Evidence written to <repo>/.harness/verify-report.json
 跑完 `verify --run` 之后再跑一遍 `assess`，看 Feedback（以及一旦声明了启动命令之后的
 Environment）从"因缺证据被封顶——跑一遍 `verify --run` 拿证据"变成一个背后有真实退出码撑着的分数。
 
+## 比较两次体检结果：`harness diff`
+
+`assess --json` 的输出是一份稳定的、带版本号的文档（`schemaVersion`）。存两份——改动前一份、
+改动后一份，或者两个分支各一份——`diff.mjs` 就能把两者的差异变成一个 CI 可以直接拿来做门禁的
+通过/失败信号，不用再靠人肉对比两份 markdown 报告：
+
+```
+$ node scripts/assess.mjs fixtures/bad-repo  --json --out /tmp/h-before.json
+$ node scripts/assess.mjs fixtures/good-repo --json --out /tmp/h-after.json
+$ node scripts/diff.mjs /tmp/h-before.json /tmp/h-after.json
+# Harness Diff Report
+
+Score: 0 → 16 (+16)
+
+Level: L0 → L3 (+3)
+
+## Subsystem Scores
+
+| Subsystem | Before → After | Delta |
+| --- | --- | --- |
+| Instructions | 0 → 4 | +4 |
+| Tools | 0 → 3 | +3 |
+| Environment | 0 → 3 | +3 |
+| State | 0 → 4 | +4 |
+| Feedback | 0 → 2 | +2 |
+| Loop | 0 → 0 | 0 |
+
+## Fixed
+
+- No declared verification commands (high)
+- No AGENTS.md or CLAUDE.md (high)
+- No progress file (high)
+...
+```
+
+（默认输出是英文，跟 `assess` 一样——加 `--lang zh` 会换成中文标题和栏位，gap 名字本身也会
+换成中文。）
+
+把这两份报告反过来比，就是一次真实的回归，退出码是 `1`：
+
+```
+$ node scripts/diff.mjs /tmp/h-after.json /tmp/h-before.json; echo "exit=$?"
+...
+exit=1
+```
+
+`--json` 输出同一份机器可读的 `DiffResult`：`schemaVersion`、总分和等级的
+`before`/`after`/`delta`、`regression` 和 `regressionReasons`（取值是 `total`、`level`，或者
+`subsystem:<id>`，刻意不看 gap **数量**——不然工具升级新增一个 gap id，看起来就会跟仓库真的
+变差了一模一样）、按 rubric 固定顺序排列的各子系统 delta，以及按 id 列出的
+`gaps.fixed`/`gaps.introduced`。`--out FILE` 会把报告写到文件里而不是标准输出，并且标准输出
+一个字节都不会打印。两份输入文件的 `schemaVersion` 对不上时会直接拒绝比对，退出码 `2`——不同
+schema 版本的报告，同一个字段可能代表完全不同的含义，本项目宁可拒绝，也不愿意给出一个看起来
+合理、实际上没有意义的数字。
+
+## 让它在每个 PR 上自动跑：GitHub Action
+
+仓库根目录的 `action.yml` 就是一个 GitHub Action。它会体检 PR 的 head，再体检它的 base commit，
+然后把两者的差异发成一条评论——内容就是上面 `diff.mjs` 打印的那份 markdown，所以评审者在 PR 上
+读到的，和你在本地跑出来的一模一样。
+
+```yaml
+name: harness-diff
+on: pull_request
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0            # 必须——原因见下
+      - uses: huhenry/harness-engineering@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+这里写 `@main`，是因为本仓库还没有发布任何 tag。把第三方 Action 钉在一个会移动的分支上是一种
+供应链风险，不该养成习惯——一旦有了 tag 或 commit sha，就钉到那上面去。
+
+零依赖同样贯彻到 Action 里：不引 `@actions/core`、不引 `@actions/github`、不打包、没有构建步骤，
+也不需要 `setup-node`。`action.yml` 选择 GitHub 的 `node24` JavaScript Action runtime，runner 直接
+执行仓库里那份 `scripts/action.mjs`，所以你在这个仓库里能读到的代码，就是在你的 PR 上真正跑的
+代码。自托管 runner 必须足够新，能够支持 Node 24 Action。
+
+| Input | 默认值 | 作用 |
+| --- | --- | --- |
+| `repo-path` | `.` | 要体检的目录。base 侧导出的是同一个子目录，所以两边描述的始终是同一个东西。 |
+| `base-ref` | `${{ github.event.pull_request.base.sha }}` | 作为比较基准的 commit。 |
+| `fail-on-regression` | `false` | 出现回归时是否让这一步失败。理由见下。 |
+| `comment` | `true` | 是否发（或更新）PR 评论。 |
+| `lang` | `en` | 评论语言：`en` 或 `zh`。 |
+
+Outputs：`score-before`、`score-after`、`score-delta`、`level-before`、`level-after`、
+`regression`。退出码沿用上面几个 CLI 的约定——`1` 永远只表示"你主动开了门禁，而且真的发生了
+回归"，绝不会因为评论没发出去而返回。
+
+### `fetch-depth: 0` 是硬性要求
+
+base 侧的数据来自 `git archive <base-sha>`，解压到仓库之外的一个临时目录里。这是一次纯读操作：
+和再跑一次 `actions/checkout` 或者 `git worktree add` 不同，它不往你的工作区写任何东西，也不往
+`.git/` 里写任何东西——这正是本项目能够持续承诺"`assess` 只读、Action 不写目标仓库"的原因。
+
+代价是 base commit 必须真的存在于 `.git` 里，而 `actions/checkout` 默认 `fetch-depth: 1`，
+根本不会把它拉下来。真遇到这种情况时，Action 会停下来并在错误信息里**明确写出 `fetch-depth: 0`**，
+而不是原样丢给你一句 `fatal: not a valid object name` 让你自己猜。
+
+### 来自 fork 的 PR 拿不到评论
+
+对于 fork 发起的 PR，GitHub 给这次 workflow 的 `GITHUB_TOKEN` 是只读的，无论 `permissions:`
+里怎么写都一样。发评论会返回 403，Action 只打一条 warning，这一步仍然算成功。diff 会写进 job
+summary 和 job 日志，所以结果照样看得到，只是不以评论的形式出现。
+
+常见的绕过办法是 `pull_request_target`——它用一个可写的 token、在 base 仓库的上下文里运行，同时
+checkout 的却是 fork 的代码。**不要这么做。** 那是把仓库写权限交到任何一个能提 PR 的人手里的
+经典路径，一条评论不值这个代价。本项目宁可如实说明这个限制，也不去粉饰它。
+
+### `fail-on-regression` 默认 `false`
+
+这是刻意的。任何人拿到一个新检查项，第一件事都是先看看它对自己的仓库说了什么——而如果它正卡着
+合并队列，人根本没法安心去看。装上当天就变红的检查，结局是被卸掉，而不是被排查。等你看清楚分数
+在自己的历史上是怎么波动的，再主动打开它；或者干脆不开，自己拿 `regression` 这个 output 去做
+门禁。本仓库对自己的 PR 把它设成了 `true`（见 `.github/workflows/harness-diff.yml`）——这是它
+有资格对自己做的决定，不是替你做的决定。
+
+### 只有一条评论，就地更新
+
+每条评论的第一行都是一个隐藏 marker `<!-- harness-engineering-diff -->`。发评论前，Action 会去
+找**第一行**正好是这个 marker 的评论，找到就 `PATCH` 更新它，而不是再发一条。只认第一行，所以
+别人引用你这条评论回复时，不会让下一次运行跑去改他的留言。每次 push 都新发一条，是一个有用的
+机器人变成一个被静音的机器人的标准路径。
+
+### 有一件事这个比对是看不见的
+
+`git archive` 只导出被 git 跟踪的文件，所以 base 侧永远不可能包含
+`.harness/verify-report.json`——本工具自己的验证证据是刻意不提交进 git 的。如果同一个 job 里更
+早的某一步跑过 `verify --run`，那么 head 侧有证据、base 侧结构上不可能有，Feedback 和
+Environment 就会显示出一个根本没人做过的"提升"。Action 会检测出这种不对称并发出 warning。把它
+放在任何 `verify --run` 步骤**之前**跑，两边就都没有证据，这才是一次公平的比较。
+
 ## 退出码
 
 这是一份稳定的对外接口——本项目自己的 CI 就是靠它做门禁的。上面第一条命令**故意**返回 `1`，
 因为 `fixtures/bad-repo` 本来就是一个存在高危缺口的仓库。这里的非零退出码意思是
 "这个仓库有问题"，不是"工具坏了"。
 
-| 退出码 | `assess` | `verify` | `scaffold` |
-| --- | --- | --- | --- |
-| `0` | 达到 `--min-level`；没指定等级时表示没有高危缺口 | 所有命令都通过（dry-run 下：所有命令都已列入计划） | dry-run，或者 `--apply` 把计划的文件都写成功了 |
-| `1` | 没达到 `--min-level`，或存在高危缺口 | 有命令失败、超时，或被安全清单拦下 | 有文件没写成功，或模板缺失 |
-| `2` | 用法错误（参数或取值写错了） | 用法错误 | 用法错误 |
-| `3` | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 |
+| 退出码 | `assess` | `verify` | `scaffold` | `diff` | Action |
+| --- | --- | --- | --- | --- | --- |
+| `0` | 达到 `--min-level`；没指定等级时表示没有高危缺口 | 所有命令都通过（dry-run 下：所有命令都已列入计划） | dry-run，或者 `--apply` 把计划的文件都写成功了 | 比对成功，没有回归 | 跑完了；评论没发出去只是 warning，不算失败 |
+| `1` | 没达到 `--min-level`，或存在高危缺口 | 有命令失败、超时，或被安全清单拦下 | 有文件没写成功，或模板缺失 | 比对成功，但发现了回归（分数、等级，或某个子系统退步了） | 开了 `fail-on-regression`，并且确实发生了回归 |
+| `2` | 用法错误（参数或取值写错了） | 用法错误 | 用法错误 | 用法错误（参数写错、文件读不到、JSON 解析失败、位置参数数量不对，或 `schemaVersion` 不一致） | 用法错误（input 取值不是 YAML 布尔量、`lang` 不支持、`base-ref` 为空，或 `base-ref` 不在 `.git` 里） |
+| `3` | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 | 未预期的内部错误 |
 
 `2` 和 `3` 是刻意分开的：参数敲错和工具自己崩了，对调用方脚本来说不能长得一模一样；
 这两者也都不该和 `1` 混淆——`1` 表示这次运行是成功的，只是它如实报告了你的仓库的真实状况。

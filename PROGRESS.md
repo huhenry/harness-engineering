@@ -45,14 +45,49 @@ should be able to trust it instead of re-deriving state from the diff.
   autonomous loop but never wires it up keeps its stop-condition and budget-cap gaps instead of
   losing them to a suppression meant for repositories with no loop at all. Gap ids 38 → 39; no
   score moved.
+- v1.2 adoption levers: added the pure, id-based `computeDiff` engine and the bilingual
+  `scripts/diff.mjs` CLI. It compares full gap sets including suppressed gaps, validates both input
+  reports before doing arithmetic, emits Markdown or JSON, and returns exit 1 for a real total,
+  level, or subsystem regression while keeping usage errors and tool failures distinct.
+- v1.2 GitHub Action: added root `action.yml`, `scripts/action.mjs`, and the self-hosting
+  `.github/workflows/harness-diff.yml`. The Action assesses the current tree and a read-only
+  `git archive` of the base ref, publishes the same diff to logs/job summary, updates one marked PR
+  comment in place, treats comment failures as warnings, and gates only when
+  `fail-on-regression: true`. Its inputs, outputs, `fetch-depth: 0` requirement, fork limitation,
+  evidence asymmetry, and supply-chain pinning caveat are documented in both READMEs.
+- v1.2 closeout review: migrated the JavaScript Action from the retired `node20` runtime to
+  `node24`, moved the bundled workflows to the current official Action majors, added Node 24 to the
+  compatibility matrix, and added tests that prevent the runtime and CI coverage from silently
+  drifting backwards. Fixture scores remain exactly 0/24 L0, 11/24 L2, and 16/24 L3; self-assessment
+  remains 23/24 L5.
+- v1.2 publication review and live acceptance: fixed the Action's last stale `checkout@v4` recovery
+  example; made `contents: read` the CI default; isolated `contents: write` to the push-to-main badge
+  job; and made that job refresh the badge before propagating failed verification/assessment gates.
+  The self-hosting workflow now consumes and validates all six Action outputs. Because remote
+  `main` was still 25 commits behind local `main`, publication uses two reviewable Draft PRs instead
+  of one 32-commit change: PR #1 (`v1.1-hardening` → `main`) and stacked PR #2
+  (`v1.2-adoption-levers` → `v1.1-hardening`). PR #2's first Action run created comment
+  `5404806581`; its second run validated `21 → 21 (0)`, L3 → L3, `regression=false`, and updated
+  that same comment. GitHub's API still reports exactly one marked comment.
+- Staged release integration: after a fresh remote-state review, PR #1 was marked Ready and merged
+  into `main` as `a4615fe`. Post-merge CI run `33348900204` passed Node 20/22 and self-assessment.
+  Local `main` was then safely fast-forwarded, and Draft PR #2 was retargeted from
+  `v1.1-hardening` to `main`. Release-state commit `6f8135d` then passed retargeted CI run
+  `33349293624` (Node 20/22/24 plus self-assessment) and harness-diff run `33349293626`. The Action
+  validated `21 → 21 (0)`, L3 → L3, `regression=false`, and updated the same comment
+  `5404806581`; the API still reports exactly one marked comment.
 
 ## In Progress
 
-- v1.1 hardening sits on the `v1.1-hardening` branch, reviewed and fixed, waiting to be merged
-  into `main`. Nothing else is in flight: the "Beyond v1.1" items in `ROADMAP.md` (`harness diff`,
-  the GitHub Action, more stack detectors, graph engineering, a web dashboard) are directions, and
-  none of them is started.
+- v1.1 is merged into `main`. v1.2 is complete and remains intentionally unmerged as Draft PR #2,
+  now based directly on `main`; all retargeted checks are green, so human review and separate merge
+  approval are the active release gates. The next planned product milestone is v1.3, the explicit
+  `assess --profile harness-distribution` profile described in the external
+  `harness-engineering-planning/2026-08-20-harness-runner-evolution-design.md`. No v1.3 product code
+  has started.
 
 ## Blocked
 
-- Nothing currently.
+- Nothing in code. PR #2 remains Draft and requires separate explicit human approval before merge.
+  The ordinary same-repository comment create/update path is live-accepted; the warning-only 403
+  path still needs a real fork PR if that optional external acceptance is desired.
